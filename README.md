@@ -23,9 +23,9 @@ flowchart LR
 
 | Folder      | Contents                                      |
 |-------------|-----------------------------------------------|
-| `MCU/`      | Microcontroller firmware for the devices      |
-| `Frontend/` | Browser map frontend                          |
-| `Backend/`  | Decryption, decoding, REST API, SQLite, simulator |
+| `mcu/`      | Microcontroller firmware for the devices      |
+| `frontend/` | Browser map frontend                          |
+| `backend/`  | Decryption, decoding, REST API, SQLite, simulator |
 
 ## Try it without hardware
 
