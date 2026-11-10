@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10232e">
+  <meta name="description" content="Accessible festival sound monitoring prototype. Compare approximate sound levels at monitored locations.">
+  <title>Soundscape | Festival Noise Explorer</title>
+  <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+  <script defer type="module" src="./js/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#locations">Skip to monitoring locations</a>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="./" aria-label="Soundscape home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="30" height="30" viewBox="0 0 30 30" fill="none"><path d="M4 18V12M10 23V7M16 19V11M22 25V5M28 17V13" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+        </span>
+        <span>sound<span class="brand-accent">scape</span><small>FESTIVAL NOISE EXPLORER</small></span>
+      </a>
+      <div class="header-right">
+        <span class="project-pill">DTU · IoT PROTOTYPE</span>
+        <span class="connection-badge" id="connection-badge" role="status" aria-live="polite">Loading data…</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro shell" aria-labelledby="main-title">
+      <div class="intro-copy">
+        <p class="eyebrow"><span class="eyebrow-dot"></span> ROSKILDE AREA · EXPERIMENTAL PROJECT</p>
+        <h1 id="main-title">Find your <em>calmer</em> place.</h1>
+        <p class="intro-description">Compare noise measurements at monitored locations. Explore what suits your comfort level, without guessing where it might be quieter.</p>
+      </div>
+      <div class="hero-note">
+        <div class="hero-note-symbol" aria-hidden="true">↗</div>
+        <p>Sound is personal.</p>
+        <span>Your comfort limit can be different from someone else's.</span>
+      </div>
+    </section>
+
+    <section class="shell snapshot" aria-label="Current monitoring summary">
+      <div class="stat-card">
+        <span class="stat-label">MONITORING POINTS</span>
+        <strong id="stat-total">—</strong>
+        <span class="stat-sub" id="stat-source-split">Checking sources…</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">AT OR BELOW YOUR LIMIT</span>
+        <strong id="stat-under">—</strong>
+        <span class="stat-sub">Locations, not a safety rating</span>
+      </div>
+      <div class="stat-card stat-card-best">
+        <span class="stat-label">LOWEST CURRENT READING</span>
+        <strong id="stat-lowest">—</strong>
+        <span class="stat-sub" id="stat-lowest-name">Across reporting nodes</span>
+      </div>
+    </section>
+
+    <section class="shell explorer" id="locations" aria-labelledby="explorer-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow dark-eyebrow">DISCOVER THE AREA</p>
+          <h2 id="explorer-title">Noise map <span class="muted-heading">/ Live overview</span></h2>
+        </div>
+        <div class="refresh-meta">
+          <span id="last-refresh">Waiting for measurements…</span>
+          <button class="text-button" id="refresh-button" type="button" aria-label="Refresh measurements now">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.8 9A7 7 0 0118 7l2 5M4 12l2 5a7 7 0 0012.2-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div id="message-banner" class="message-banner" role="status" aria-live="polite" hidden></div>
+
+      <div class="dashboard-grid">
+        <div class="map-panel">
+          <div class="map-heading">
+            <div>
+              <strong>Monitored locations</strong>
+              <span>Choose a marker or a location in the list</span>
+            </div>
+            <button type="button" id="reset-map" class="map-reset">Reset map view</button>
+          </div>
+          <div id="map" class="map-canvas" aria-label="Interactive map of monitoring locations"></div>
+          <div id="map-fallback" class="map-fallback" hidden>Map tiles couldn't load. You can still explore every monitoring point using the accessible location list.</div>
+          <div class="map-footer">
+            <div class="legend" aria-label="Map legend">
+              <span><i class="legend-symbol legend-under" aria-hidden="true">✓</i> At/below limit</span>
+              <span><i class="legend-symbol legend-over" aria-hidden="true">!</i> Above limit</span>
+              <span><i class="legend-symbol legend-stale" aria-hidden="true">–</i> Unavailable</span>
+            </div>
+            <span class="map-caveat">Markers show individual points, not entire zones.</span>
+          </div>
+        </div>
+
+        <aside class="sidebar" aria-label="Personal settings and location information">
+          <section class="comfort-panel" aria-labelledby="comfort-title">
+            <div class="panel-title-row">
+              <h3 id="comfort-title">My comfort limit</h3>
+              <span class="tag">PERSONAL</span>
+            </div>
+            <div class="threshold-number"><output id="threshold-output" for="threshold">80</output><span>dB</span></div>
+            <label class="visually-hidden" for="threshold">Preferred maximum noise level in decibels</label>
+            <input id="threshold" type="range" min="55" max="105" step="5" value="80" aria-describedby="threshold-help">
+            <div class="range-bounds"><span>55 dB</span><span>105 dB</span></div>
+            <p id="threshold-help" class="control-help">Locations above your chosen limit are highlighted. This is a <strong>comfort preference</strong>, not a hearing-safety certificate.</p>
+            <p id="threshold-warning" class="threshold-warning" role="status" aria-live="polite" hidden>You selected a limit above the 80 dB reference. This does not make higher sound exposure safe.</p>
+            <div class="reference-note"><span class="info-mark" aria-hidden="true">i</span><span><strong>Why 80 dB?</strong> WHO uses 80 dB as a reference in its safe-listening guidance; risk depends on <strong>duration as well as level</strong>. Raising your limit does not make a place safer. <a href="https://www.who.int/news-room/questions-and-answers/item/deafness-and-hearing-loss-safe-listening" target="_blank" rel="noopener noreferrer">Read WHO guidance ↗</a></span></div>
+          </section>
+
+          <section class="locations-panel" aria-labelledby="location-list-title">
+            <div class="panel-title-row list-heading">
+              <div><h3 id="location-list-title">Explore locations</h3><p id="list-count">Loading locations…</p></div>
+              <label class="switch-label"><input id="below-only" type="checkbox"><span>Below my limit only</span></label>
+            </div>
+            <div id="location-list" class="location-list" aria-label="Monitoring point list"></div>
+            <p id="list-empty" class="empty-state" hidden>No locations meet this filter. Change your comfort limit or show all locations.</p>
+          </section>
+        </aside>
+      </div>
+
+      <section class="detail-panel" aria-labelledby="detail-title">
+        <div class="detail-heading">
+          <div><p class="eyebrow dark-eyebrow">SELECTED MONITORING POINT</p><h3 id="detail-title">Choose a location</h3></div>
+          <span id="detail-status" class="detail-status">—</span>
+        </div>
+        <div class="detail-measures">
+          <div><span>Average sound</span><strong id="detail-avg">—</strong></div>
+          <div><span>Peak sound</span><strong id="detail-peak">—</strong></div>
+          <div><span>Temperature</span><strong id="detail-temp">—</strong></div>
+          <div><span>Humidity</span><strong id="detail-humidity">—</strong></div>
+          <div><span>Battery voltage</span><strong id="detail-battery">—</strong></div>
+        </div>
+        <div class="detail-foot"><span id="detail-source">Select a sensor on the map or in the list.</span><span id="detail-time"></span></div>
+      </section>
+    </section>
+
+    <section class="shell notes" aria-label="Important information">
+      <div class="note-card"><span class="note-icon" aria-hidden="true">!</span><div><h3>Readings are approximate</h3><p>The prototype uses local microphone measurements; they are not certified hearing-exposure assessments. Noise can change quickly, and areas between monitoring points are not measured.</p></div></div>
+      <div class="note-card"><span class="note-icon note-icon-round" aria-hidden="true">◎</span><div><h3>Your choice, your comfort</h3><p>Use this information to compare places, not to decide whether exposure is safe. Take breaks from loud music and consider hearing protection.</p></div></div>
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="shell footer-inner"><span>Soundscape · DTU IoT prototyping project</span><span>Independent educational prototype — not affiliated with Roskilde Festival</span></div></footer>
+</body>
+</html>
