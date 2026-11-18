@@ -231,21 +231,9 @@ h2 { margin-bottom: 0; font-weight: 800; font-size: 28px; letter-spacing: -.85px
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
 
-/* Compact header: intro and stats take less vertical space, so the map is visible sooner. */
-.intro { grid-template-columns: 1fr; gap: 0; padding-top: 20px; padding-bottom: 14px; }
-.hero-note { display: none; }
-.intro .eyebrow { margin-bottom: 8px; }
-h1 { font-size: clamp(28px, 3vw, 38px); letter-spacing: -1.6px; margin-bottom: 6px; }
-.intro-description { font-size: 14px; line-height: 1.5; }
-.snapshot { gap: 10px; margin-bottom: 20px; }
-.stat-card { min-height: 0; padding: 12px 18px; }
-.stat-card strong { margin: 4px 0 1px; font-size: 24px; letter-spacing: -.8px; }
-.stat-sub { font-size: 11px; }
-@media (max-width: 580px) {
-  .stat-card { padding: 10px; }
-  .stat-card strong { font-size: 20px; }
-  .stat-label { min-height: 0; }
-}
+/* No hero or stat cards: the map section starts at the top, with a one-line summary. */
+.explorer { padding-top: 22px; }
+.summary-line { margin: 4px 0 0; font-size: 13px; color: #52676b; }
 
 /* Detail panel: 7 measures in a 4 + 3 grid. */
 .detail-measures { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 18px; }
