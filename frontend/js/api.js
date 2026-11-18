@@ -52,10 +52,15 @@ export function normalizeDevices(rawDevices) {
       position_accuracy_m: validNumber(raw.position_accuracy_m, 0, 1e7),
       pending_interval_min: validNumber(raw.pending_interval_min, 1, 240),
       pending_reboot: raw.pending_reboot === true,
+      checkin_min: validNumber(raw.checkin_min, 1, 255),
+      sleep_minutes_left: validNumber(raw.sleep_minutes_left, 0, 65535),
+      pending_sleep_min: validNumber(raw.pending_sleep_min, 0, 65535),
+      pending_sleep_checkin_min: validNumber(raw.pending_sleep_checkin_min, 1, 255),
+      pending_wake: raw.pending_wake === true,
       reboot_supported: typeof raw.reboot_supported === 'boolean' ? raw.reboot_supported : null,
       firmware: typeof raw.firmware === 'string' ? raw.firmware : null,
       source: raw.source === 'simulated' ? 'simulated' : raw.source === 'physical' ? 'physical' : 'unknown',
-      status: raw.status === 'offline' ? 'offline' : 'online',
+      status: raw.status === 'offline' ? 'offline' : raw.status === 'sleeping' ? 'sleeping' : 'online',
       last_updated: Number.isFinite(dateMs) ? new Date(dateMs).toISOString() : null,
     }];
   });
@@ -69,11 +74,15 @@ async function postCommand(id, command, body) {
 }
 /** Asks the backend to send an interval downlink to a real node. */
 export const setUplinkInterval = (id, minutes) => postCommand(id, 'interval', { minutes });
+/** Sleep for `minutes` (0 = until woken), checking in every `checkinMin` minutes. */
+export const sleepNode = (id, minutes, checkinMin) => postCommand(id, 'sleep', { minutes, checkin_min: checkinMin });
+/** Wake a sleeping node (delivered after its next check-in), or cancel a queued sleep. */
+export const wakeNode = (id) => postCommand(id, 'wake');
 /** Asks the backend to send a restart downlink (firmware v0.8+). */
 export const restartNode = (id) => postCommand(id, 'reboot');
 
 export function conditionFor(device, threshold, now = Date.now()) {
   const observed = device.last_updated ? Date.parse(device.last_updated) : NaN;
-  if (device.status === 'offline' || !Number.isFinite(observed) || now - observed > CONFIG.STALE_AFTER_MS || observed > now + 60 * 1000 || device.noise_avg === null) return 'unavailable';
+  if (device.status === 'offline' || device.status === 'sleeping' || !Number.isFinite(observed) || now - observed > CONFIG.STALE_AFTER_MS || observed > now + 60 * 1000 || device.noise_avg === null) return 'unavailable';
   return device.noise_avg <= threshold ? 'under' : 'over';
 }

@@ -32,6 +32,8 @@ pub fn router(store: Shared, ttn: Option<Ttn>, frontend: PathBuf) -> Router {
         .route("/api/devices", get(devices))
         .route("/api/devices/:id/interval", post(set_interval))
         .route("/api/devices/:id/reboot", post(reboot))
+        .route("/api/devices/:id/sleep", post(sleep))
+        .route("/api/devices/:id/wake", post(wake))
         .route("/js/config.js", get(move || frontend_config(config_js.clone())))
         .fallback_service(ServeDir::new(frontend))
         // Always revalidate, so the browser never mixes a new index.html with an old app.js.
@@ -61,6 +63,29 @@ async fn set_interval(State(app): State<AppState>, Path(id): Path<String>, Json(
 /// POST /api/devices/{id}/reboot → downlink 06 (firmware v0.8+).
 async fn reboot(State(app): State<AppState>, Path(id): Path<String>) -> Response {
     send_command(app, id, Command::Reboot).await
+}
+
+fn default_checkin() -> u8 { 30 }
+
+#[derive(Deserialize)]
+struct SleepRequest {
+    #[serde(default)]
+    minutes: u16, // 0 = until woken
+    #[serde(default = "default_checkin")]
+    checkin_min: u8,
+}
+
+/// POST /api/devices/{id}/sleep {"minutes": 120, "checkin_min": 30} → downlink 04 hh ll cc.
+async fn sleep(State(app): State<AppState>, Path(id): Path<String>, Json(req): Json<SleepRequest>) -> Response {
+    if req.checkin_min < 5 {
+        return (StatusCode::BAD_REQUEST, "checkin_min must be 5 to 255").into_response();
+    }
+    send_command(app, id, Command::Sleep { minutes: req.minutes, checkin_min: req.checkin_min }).await
+}
+
+/// POST /api/devices/{id}/wake → downlink 05, delivered after the node's next check-in.
+async fn wake(State(app): State<AppState>, Path(id): Path<String>) -> Response {
+    send_command(app, id, Command::Wake).await
 }
 
 /// Works out the node's new TTN queue, sends it (replacing the old one) and records it.

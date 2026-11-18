@@ -57,6 +57,10 @@ The Google key must have the Geolocation API enabled and must **not** be restric
 Select a real node on the map. Under the measurements:
 
 - **Uplink interval** + **Apply** → downlink `01 mm` (`POST /api/devices/{id}/interval`).
+- **Sleep** (duration + check-in period) → downlink `04 hh ll cc` (`POST /api/devices/{id}/sleep`
+  `{"minutes": 120, "checkin_min": 30}`, minutes 0 = until woken). The node stops measuring and sends
+  only a port 3 check-in; the map shows it as *Sleeping*. **Wake** → downlink `05`
+  (`POST /api/devices/{id}/wake`), delivered after the next check-in. Restarting a node also wakes it.
 - **Restart node** (click twice) → downlink `06` (`POST /api/devices/{id}/reboot`). Needs
   firmware v0.8 or later; the button is disabled for nodes that report an older version on port 4.
 
@@ -96,4 +100,4 @@ Delete the file to start fresh.
 
 ## Not done yet
 
-Other downlinks (scan time, blink, sleep, wake), Docker.
+Other downlinks (scan time, blink), Docker.
