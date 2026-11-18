@@ -246,3 +246,12 @@ h1 { font-size: clamp(28px, 3vw, 38px); letter-spacing: -1.6px; margin-bottom: 6
   .stat-card strong { font-size: 20px; }
   .stat-label { min-height: 0; }
 }
+
+/* Detail panel: 7 measures in a 4 + 3 grid. */
+.detail-measures { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 18px; }
+.detail-measures > div:nth-child(4n) { border-right: 0; }
+@media (max-width: 830px) {
+  .detail-measures { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .detail-measures > div:nth-child(4n) { border-right: 1px solid #e8eded; }
+  .detail-measures > div:nth-child(3n), .detail-measures > div:last-child { border-right: 0; }
+}
