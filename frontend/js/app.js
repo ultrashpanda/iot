@@ -2,7 +2,7 @@ import { CONFIG } from './config.js';
 import { fetchDevices, normalizeDevices, conditionFor } from './api.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { devices: [], threshold: initialThreshold(), belowOnly: false, selectedId: null, map: null, markers: new Map(), refreshing: false };
+const state = { allDevices: [], devices: [], threshold: initialThreshold(), belowOnly: false, realOnly: initialRealOnly(), selectedId: null, map: null, markers: new Map(), refreshing: false };
 
 function initialThreshold() {
   try {
@@ -10,6 +10,8 @@ function initialThreshold() {
     return saved >= 55 && saved <= 105 && saved % 5 === 0 ? saved : CONFIG.DEFAULT_THRESHOLD_DB;
   } catch { return CONFIG.DEFAULT_THRESHOLD_DB; }
 }
+function initialRealOnly() { try { return localStorage.getItem('soundscape-real-only') === '1'; } catch { return false; } }
+function saveRealOnly(value) { try { localStorage.setItem('soundscape-real-only', value ? '1' : '0'); } catch { /* private mode */ } }
 function saveThreshold(value) { try { localStorage.setItem('soundscape-threshold-db', String(value)); } catch { /* private mode */ } }
 function formatNumber(value, digits = 0) { return value === null || value === undefined ? '—' : Number(value).toFixed(digits); }
 function formatReading(value, suffix, digits = 0) { return value === null || value === undefined ? '—' : `${formatNumber(value, digits)} ${suffix}`; }
@@ -90,13 +92,11 @@ function renderStats() {
   const reporting = state.devices.filter((d) => conditionFor(d, state.threshold) !== 'unavailable');
   const under = reporting.filter((d) => conditionFor(d, state.threshold) === 'under');
   const lowest = reporting.reduce((min, d) => !min || d.noise_avg < min.noise_avg ? d : min, null);
-  $('stat-total').textContent = String(reporting.length);
   const physical = reporting.filter((d) => d.source === 'physical').length;
   const simulated = reporting.filter((d) => d.source === 'simulated').length;
-  $('stat-source-split').textContent = `${physical} physical · ${simulated} simulated`;
-  $('stat-under').textContent = `${under.length} / ${reporting.length}`;
-  $('stat-lowest').textContent = lowest ? `${Math.round(lowest.noise_avg)} dB` : '—';
-  $('stat-lowest-name').textContent = lowest ? lowest.name : 'No recent readings';
+  $('summary-line').textContent = reporting.length === 0 ? 'No locations reporting right now'
+    : `${reporting.length} reporting (${physical} physical · ${simulated} simulated) · ${under.length} at or below your limit`
+      + (lowest ? ` · quietest: ${lowest.name}, ${Math.round(lowest.noise_avg)} dB` : '');
 }
 
 function makeLocationButton(device) {
@@ -141,7 +141,15 @@ function renderList() {
 }
 function renderDetail() {
   const d = getSelected();
-  if (!d) return;
+  if (!d) {
+    $('detail-title').textContent = 'Choose a location';
+    $('detail-status').className = 'detail-status';
+    $('detail-status').textContent = '—';
+    for (const id of ['detail-avg', 'detail-peak', 'detail-crowd', 'detail-temp', 'detail-humidity', 'detail-battery', 'detail-signal']) $(id).textContent = '—';
+    $('detail-source').textContent = 'Select a sensor on the map or in the list.';
+    $('detail-time').textContent = '';
+    return;
+  }
   const condition = conditionFor(d, state.threshold);
   $('detail-title').textContent = d.name;
   $('detail-status').className = `detail-status detail-status--${condition}`;
@@ -150,7 +158,11 @@ function renderDetail() {
   $('detail-peak').textContent = formatReading(d.noise_peak, 'dB');
   $('detail-temp').textContent = formatReading(d.temperature, '°C', 1);
   $('detail-humidity').textContent = formatReading(d.humidity, '%', 0);
-  $('detail-battery').textContent = formatReading(d.battery_voltage, 'V', 2);
+  const battery = [d.battery_voltage === null ? null : `${formatNumber(d.battery_voltage, 2)}\u00a0V`, d.battery_pct === null || d.battery_pct === undefined ? null : `${d.battery_pct}\u00a0%`].filter(Boolean);
+  $('detail-battery').textContent = battery.length ? battery.join(' · ') : '—';
+  $('detail-crowd-label').textContent = d.crowd_source === 'networks' ? 'Wi-Fi networks' : 'Phones nearby';
+  $('detail-crowd').textContent = formatNumber(d.crowd_count);
+  $('detail-signal').textContent = formatReading(d.rssi, 'dBm');
   $('detail-source').textContent = d.source === 'simulated' ? 'Simulated reading · illustrative location' : d.source === 'physical' ? 'Physical sensor · prototype measurement' : 'Sensor source unspecified';
   $('detail-time').textContent = relativeTime(d.last_updated);
 }
@@ -163,16 +175,22 @@ function selectDevice(id, moveMap) {
   if (moveMap && d && state.map) state.map.panTo([d.latitude, d.longitude], { animate: true });
 }
 
+/** "Hide simulated nodes": keep only physical (and unknown-source) devices. */
+function applySourceFilter() {
+  state.devices = state.realOnly ? state.allDevices.filter((d) => d.source !== 'simulated') : state.allDevices;
+  if (!state.devices.some((d) => d.id === state.selectedId)) {
+    state.selectedId = state.devices.find((d) => conditionFor(d, state.threshold) !== 'unavailable')?.id ?? state.devices[0]?.id ?? null;
+  }
+}
+
 async function refresh() {
   if (state.refreshing) return;
   state.refreshing = true;
   $('refresh-button').disabled = true;
   try {
     const response = await fetchDevices();
-    state.devices = normalizeDevices(response.devices);
-    if (!state.devices.some((d) => d.id === state.selectedId)) {
-      state.selectedId = state.devices.find((d) => conditionFor(d, state.threshold) !== 'unavailable')?.id ?? state.devices[0]?.id ?? null;
-    }
+    state.allDevices = normalizeDevices(response.devices);
+    applySourceFilter();
     renderEverything();
     $('last-refresh').textContent = `Refreshed ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
     setConnection('connected');
@@ -199,6 +217,13 @@ function init() {
   $('below-only').addEventListener('change', (event) => {
     state.belowOnly = event.target.checked;
     renderMap(); renderList();
+  });
+  $('real-only').checked = state.realOnly;
+  $('real-only').addEventListener('change', (event) => {
+    state.realOnly = event.target.checked;
+    saveRealOnly(state.realOnly);
+    applySourceFilter();
+    renderEverything();
   });
   $('refresh-button').addEventListener('click', refresh);
   initMap();
