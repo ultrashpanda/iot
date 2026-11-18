@@ -1,0 +1,10 @@
+# Secrets
+secrets.h
+.env
+
+# OS / editor
+.DS_Store
+*.loop
+
+# Build output
+backend/target/

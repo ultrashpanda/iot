@@ -26,6 +26,7 @@ flowchart LR
 | `mcu/`      | Microcontroller firmware for the devices      |
 | `frontend/` | Browser map frontend                          |
 | `backend/`  | Decryption, decoding, REST API, SQLite, simulator |
+| `docs/`     | Message formats and agreements between teams  |
 
 ## Try it without hardware
 
@@ -38,7 +39,7 @@ The simulator adds fake devices, so the map is live straight away.
 
 ## Status
 
-- [ ] MCU firmware
+- [x] MCU firmware (v0.7)
 - [ ] Backend
 - [ ] Frontend
 
