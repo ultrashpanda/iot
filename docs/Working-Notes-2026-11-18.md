@@ -7,12 +7,13 @@ running things is in [`backend-alt/README.md`](../backend-alt/README.md) and [`m
 
 | Part | State |
 |---|---|
-| `mcu/` | Firmware **v0.8** (remote restart, downlink `06`). Merged, **not tested on hardware**. |
+| `mcu/` | Firmware **v0.8** (remote restart, downlink `06`). Merged, **not tested on hardware**. PR #8 (TJv4) fixed missing `config.h` defines, so it compiles now. |
 | Node 1 (`1-soundscape-device`) | Runs **v0.7**, which reports itself as **0.6** on port 4 (typo fixed in v0.8). |
 | `backend-alt/` | Works end to end with node 1: TTN uplinks over MQTT, decoding, SQLite, map. |
 | Wi-Fi geolocation | Works: 5 routers → Google fix ±18 m, position correct. |
 | Interval downlink | TTN accepted `01 02` (2 min) at 12:33. Whether the node applied it was **not confirmed yet**. |
 | Restart button | In the web UI, enabled only for nodes on firmware 0.8+. |
+| Sleep / wake | In the web UI (downlinks `04` / `05`, every firmware version). Not tested on a node yet. |
 | `backend/` | Untouched, left for the backend team's own code. |
 | `frontend/` | Hide simulated switch, slim header, phones / battery % / signal, interval and restart controls. |
 
@@ -34,7 +35,8 @@ Cause unknown. The port 4 reset cause of the next boot will tell (0x08 watchdog,
       `feat/frontend-mvp`, `feat/fw-v0.8-reboot`, `feat/hide-simulated`, `feat/mcu-firmware`.
 - [ ] Optional: `backend-alt/devices.json` with each node's installation position (fallback when
       fewer than 3 routers are visible).
-- [ ] Not built yet: UI for the other downlinks (scan time, blink, sleep, wake); Docker.
+- [ ] Test sleep and wake on node 1: sleep 30 min with check-in 5 min, then wake.
+- [ ] Not built yet: UI for the scan time and blink downlinks; Docker.
 
 ## 3. Keys (no secrets in this file)
 
