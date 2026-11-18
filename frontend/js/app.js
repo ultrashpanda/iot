@@ -1,8 +1,8 @@
 import { CONFIG } from './config.js';
-import { fetchDevices, normalizeDevices, conditionFor, setUplinkInterval } from './api.js';
+import { fetchDevices, normalizeDevices, conditionFor, setUplinkInterval, restartNode } from './api.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { allDevices: [], devices: [], threshold: initialThreshold(), belowOnly: false, realOnly: initialRealOnly(), selectedId: null, map: null, markers: new Map(), refreshing: false, intervalFor: null, intervalMessage: null };
+const state = { allDevices: [], devices: [], threshold: initialThreshold(), belowOnly: false, realOnly: initialRealOnly(), selectedId: null, map: null, markers: new Map(), refreshing: false, intervalFor: null, intervalMessage: null, rebootArmedFor: null, rebootMessage: null };
 
 function initialThreshold() {
   try {
@@ -188,10 +188,48 @@ function renderIntervalControl(d) {
     state.intervalFor = d.id;
     $('interval-select').value = String(d.pending_interval_min ?? d.interval_min);
   }
+  renderRebootControl(d);
   if (state.intervalMessage) return;
   $('interval-status').textContent = d.pending_interval_min !== null
     ? `Now ${d.interval_min} min · ${d.pending_interval_min} min pending, applies after the next uplink`
     : `Now ${d.interval_min} min`;
+}
+
+function renderRebootControl(d) {
+  const btn = $('reboot-button');
+  const armed = state.rebootArmedFor === d.id;
+  btn.classList.toggle('is-armed', armed);
+  btn.textContent = d.pending_reboot ? 'Restart queued' : armed ? 'Click again to restart' : 'Restart node';
+  btn.disabled = d.pending_reboot || d.reboot_supported === false;
+  if (state.rebootMessage) return;
+  $('reboot-status').textContent = d.pending_reboot ? 'Restarts after its next uplink'
+    : d.reboot_supported === false ? `Needs firmware v0.8 (node has ${d.firmware ?? '?'})`
+    : d.reboot_supported === null ? 'Firmware unknown: older firmware ignores it' : '';
+}
+
+/** Two clicks within 5 s, so a node is never restarted by accident. */
+async function onRebootClick() {
+  const d = getSelected();
+  if (!d) return;
+  if (state.rebootArmedFor !== d.id) {
+    state.rebootArmedFor = d.id;
+    renderDetail();
+    setTimeout(() => { if (state.rebootArmedFor === d.id) { state.rebootArmedFor = null; renderDetail(); } }, 5000);
+    return;
+  }
+  state.rebootArmedFor = null;
+  $('reboot-button').disabled = true;
+  try {
+    await restartNode(d.id);
+    state.rebootMessage = null;
+    await refresh();
+  } catch (err) {
+    state.rebootMessage = `Could not send: ${err.message}`;
+    $('reboot-status').textContent = state.rebootMessage;
+    setTimeout(() => { state.rebootMessage = null; renderDetail(); }, 8000);
+  } finally {
+    renderDetail();
+  }
 }
 
 async function applyInterval() {
@@ -271,6 +309,7 @@ function init() {
     renderEverything();
   });
   $('interval-apply').addEventListener('click', applyInterval);
+  $('reboot-button').addEventListener('click', onRebootClick);
   $('refresh-button').addEventListener('click', refresh);
   initMap();
   setConnection('loading');

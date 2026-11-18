@@ -262,3 +262,5 @@ h1 { font-size: clamp(28px, 3vw, 38px); letter-spacing: -1.6px; margin-bottom: 6
 .interval-control label { font-weight: 700; color: var(--ink); }
 .interval-control select { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--white); color: var(--ink); }
 .interval-status { font-size: 12px; color: #53676b; }
+.control-spacer { flex: 1 1 auto; }
+#reboot-button.is-armed { border-color: #b4542f; color: #8a3a1c; background: #fff4ef; }

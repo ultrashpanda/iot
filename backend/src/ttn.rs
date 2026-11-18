@@ -24,13 +24,14 @@ pub struct Ttn {
 }
 
 impl Ttn {
-    /// Replaces the device's downlink queue at TTN with this one message. TTN delivers it after the
-    /// node's next uplink (class A). Needs the API key right "Write downlink application traffic".
-    pub async fn send_downlink(&self, dev_id: &str, port: u8, bytes: &[u8]) -> Result<(), String> {
+    /// Replaces the device's downlink queue at TTN with these messages, in order. TTN delivers one
+    /// after each uplink of the node (class A). Needs the API key right "Write downlink application traffic".
+    pub async fn replace_downlinks(&self, dev_id: &str, port: u8, payloads: &[Vec<u8>]) -> Result<(), String> {
         let topic = format!("v3/{}@ttn/devices/{}/down/replace", self.app_id, dev_id);
-        let body = serde_json::json!({
-            "downlinks": [{ "f_port": port, "frm_payload": B64.encode(bytes), "priority": "NORMAL" }]
-        });
+        let downlinks: Vec<_> = payloads.iter()
+            .map(|b| serde_json::json!({ "f_port": port, "frm_payload": B64.encode(b), "priority": "NORMAL" }))
+            .collect();
+        let body = serde_json::json!({ "downlinks": downlinks });
         self.client
             .publish(topic, QoS::AtLeastOnce, false, body.to_string())
             .await

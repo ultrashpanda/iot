@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::source::{RawUplink, Source};
 use crate::geo::{self, Fix};
-use crate::uplink::{self, Ap, CrowdSource, DecodeError, Measurement, Uplink};
+use crate::uplink::{self, Ap, CrowdSource, DecodeError, Downlink, Measurement, Uplink};
 
 /// Map centre used for devices without a configured position (same as frontend/js/config.js).
 const CENTER: (f64, f64) = (55.607, 12.071);
@@ -52,8 +52,8 @@ pub struct Device {
     position_source: &'static str, // "installation" (devices.json), "wifi" (Google), "placeholder"
     position_accuracy_m: Option<f64>,
     interval_min: u32,
-    /// Interval sent by downlink, applied when the node's next uplink arrives (class A).
-    pending_interval_min: Option<u32>,
+    /// Commands queued at TTN, front = delivered with the next uplink (class A, one per uplink).
+    pending: Vec<Command>,
     checkin_min: u32,
     last_seen: Option<DateTime<Utc>>,
     last_port: Option<u8>,
@@ -62,10 +62,32 @@ pub struct Device {
     battery_pct: Option<u8>,
     battery_v: Option<f32>,
     powered_up_at: Option<DateTime<Utc>>,
-    firmware: Option<String>,
+    firmware: Option<(u8, u8)>,
     rssi: Option<i16>,
     snr: Option<f32>,
 }
+
+/// A command for a real node, sent as a port 1 downlink.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Command {
+    Interval(u8),
+    Reboot,
+}
+
+impl Command {
+    pub fn downlink(self) -> Downlink {
+        match self { Command::Interval(minutes) => Downlink::Interval { minutes }, Command::Reboot => Downlink::Reboot }
+    }
+    fn kind(self) -> &'static str {
+        match self { Command::Interval(_) => "interval", Command::Reboot => "reboot" }
+    }
+    fn value(self) -> Option<i64> {
+        match self { Command::Interval(m) => Some(m as i64), Command::Reboot => None }
+    }
+}
+
+/// Firmware that understands the reboot downlink (06).
+const REBOOT_FIRMWARE: (u8, u8) = (0, 8);
 
 /// GET /api/devices item. Every key is always present; None → null.
 #[derive(Serialize)]
@@ -92,6 +114,8 @@ pub struct DeviceJson {
     position_accuracy_m: Option<f64>,
     interval_min: Option<u32>,         // physical nodes only
     pending_interval_min: Option<u32>, // sent, not yet delivered
+    pending_reboot: bool,
+    reboot_supported: Option<bool>,    // None = firmware version not known yet
     last_seen: Option<String>,
     powered_up_at: Option<String>,
     firmware: Option<String>,
@@ -183,18 +207,29 @@ impl Store {
         for raw in &history {
             let _ = store.apply(raw);
         }
-        // Interval downlinks: 'sent' ones are the node's current interval, a 'pending' one is still queued at TTN.
+        // Downlinks: a 'sent' interval is the node's current interval, 'pending' ones are still queued at TTN.
         let downlinks = {
             let mut stmt = store.db.prepare(
-                "SELECT dev_id, value, state FROM downlinks WHERE kind = 'interval' ORDER BY created_at",
+                "SELECT dev_id, kind, value, state FROM downlinks WHERE state IN ('sent', 'pending') ORDER BY id",
             )?;
-            let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))?;
-            let downlinks: Vec<(String, i64, String)> = rows.collect::<rusqlite::Result<_>>()?;
+            let rows = stmt.query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<i64>>(2)?, r.get::<_, String>(3)?))
+            })?;
+            let downlinks: Vec<(String, String, Option<i64>, String)> = rows.collect::<rusqlite::Result<_>>()?;
             downlinks
         };
-        for (dev_id, minutes, state) in downlinks {
+        for (dev_id, kind, value, state) in downlinks {
+            let cmd = match (kind.as_str(), value) {
+                ("interval", Some(m)) => Command::Interval(m as u8),
+                ("reboot", _) => Command::Reboot,
+                _ => continue,
+            };
             if let Some(d) = store.devices.get_mut(&dev_id) {
-                if state == "sent" { d.interval_min = minutes as u32 } else { d.pending_interval_min = Some(minutes as u32) }
+                match (state.as_str(), cmd) {
+                    ("sent", Command::Interval(m)) => d.interval_min = m as u32,
+                    ("pending", _) => d.pending.push(cmd),
+                    _ => {}
+                }
             }
         }
         // Wi-Fi geolocation results, in order, so the position rules end in the same state (no Google calls).
@@ -241,9 +276,10 @@ impl Store {
             match inserted {
                 Ok(0) => return None, // duplicate (dev_id, f_cnt, received_at)
                 Ok(_) => {
-                    // TTN delivers a queued downlink right after this uplink.
+                    // TTN delivers the oldest queued downlink right after this uplink.
                     if let Err(e) = self.db.execute(
-                        "UPDATE downlinks SET state = 'sent' WHERE dev_id = ?1 AND state = 'pending'",
+                        "UPDATE downlinks SET state = 'sent' WHERE id =
+                            (SELECT MIN(id) FROM downlinks WHERE dev_id = ?1 AND state = 'pending')",
                         params![raw.dev_id],
                     ) {
                         eprintln!("[db] could not update downlinks for {}: {e}", raw.dev_id);
@@ -328,9 +364,14 @@ impl Store {
     fn apply(&mut self, raw: &RawUplink) -> Result<Uplink, DecodeError> {
         let decoded = uplink::decode(raw.port, &raw.payload);
         let dev = self.device_mut(&raw.dev_id, raw.source);
-        if let Some(minutes) = dev.pending_interval_min.take() {
-            dev.interval_min = minutes;
-            println!("[downlink] {}: interval {minutes} min delivered with this uplink", raw.dev_id);
+        if !dev.pending.is_empty() {
+            match dev.pending.remove(0) {
+                Command::Interval(m) => {
+                    dev.interval_min = m as u32;
+                    println!("[downlink] {}: interval {m} min delivered with this uplink", raw.dev_id);
+                }
+                Command::Reboot => println!("[downlink] {}: restart delivered with this uplink, node reboots now", raw.dev_id),
+            }
         }
         dev.last_seen = Some(raw.received_at);
         dev.last_port = Some(raw.port);
@@ -351,7 +392,7 @@ impl Store {
                     dev.battery_pct = *battery_pct;
                 }
             }
-            Ok(Uplink::Boot(b)) => dev.firmware = Some(format!("{}.{}", b.fw_major, b.fw_minor)),
+            Ok(Uplink::Boot(b)) => dev.firmware = Some((b.fw_major, b.fw_minor)),
             Err(_) => {}
         }
         decoded
@@ -377,7 +418,7 @@ impl Store {
                 position_source: if cfg.is_some() { "installation" } else { "placeholder" },
                 position_accuracy_m: None,
                 interval_min: cfg.and_then(|c| c.interval_min).unwrap_or(default_interval),
-                pending_interval_min: None,
+                pending: Vec::new(),
                 checkin_min: 30,
                 last_seen: None,
                 last_port: None,
@@ -393,28 +434,54 @@ impl Store {
         })
     }
 
-    pub fn is_physical(&self, id: &str) -> bool {
-        self.devices.get(id).is_some_and(|d| d.source == Source::Physical)
+    /// The node's TTN queue after adding `cmd`: a new interval replaces a queued one, a restart
+    /// always goes last. Err when the command can't be sent to this device.
+    pub fn plan_command(&self, id: &str, cmd: Command) -> Result<Vec<Command>, String> {
+        let d = self.devices.get(id).filter(|d| d.source == Source::Physical)
+            .ok_or_else(|| format!("{id} is not a real node"))?;
+        let mut queue: Vec<Command> = d.pending.clone();
+        match cmd {
+            Command::Interval(_) => {
+                queue.retain(|c| !matches!(c, Command::Interval(_)));
+                let at = queue.iter().position(|c| *c == Command::Reboot).unwrap_or(queue.len());
+                queue.insert(at, cmd);
+            }
+            Command::Reboot => {
+                if let Some(fw) = d.firmware.filter(|fw| *fw < REBOOT_FIRMWARE) {
+                    return Err(format!("firmware {}.{} can't restart remotely, flash v0.8 or later", fw.0, fw.1));
+                }
+                if queue.contains(&Command::Reboot) {
+                    return Err("a restart is already queued".into());
+                }
+                queue.push(cmd);
+            }
+        }
+        Ok(queue)
     }
 
-    /// Records an interval downlink that was handed to TTN. It becomes the interval on the next uplink.
-    pub fn record_interval_downlink(&mut self, id: &str, minutes: u32, bytes: &[u8]) {
-        // A newer command replaces the queue at TTN, so older pending rows will never be delivered.
-        let result = self.db.execute(
+    /// Records the queue that was handed to TTN (it replaced the previous one there).
+    pub fn commit_queue(&mut self, id: &str, queue: Vec<Command>) {
+        let now = iso(Utc::now());
+        let mut result = self.db.execute(
             "UPDATE downlinks SET state = 'replaced' WHERE dev_id = ?1 AND state = 'pending'",
             params![id],
-        ).and_then(|_| self.db.execute(
-            "INSERT INTO downlinks (dev_id, created_at, port, bytes, kind, value, state)
-             VALUES (?1, ?2, 1, ?3, 'interval', ?4, 'pending')",
-            params![id, iso(Utc::now()), bytes, minutes as i64],
-        ));
+        ).map(|_| ());
+        for cmd in &queue {
+            if result.is_err() { break; }
+            let bytes = cmd.downlink().encode().unwrap_or_default();
+            result = self.db.execute(
+                "INSERT INTO downlinks (dev_id, created_at, port, bytes, kind, value, state)
+                 VALUES (?1, ?2, 1, ?3, ?4, ?5, 'pending')",
+                params![id, now, bytes, cmd.kind(), cmd.value()],
+            ).map(|_| ());
+        }
         if let Err(e) = result {
-            eprintln!("[db] could not store downlink for {id}: {e}");
+            eprintln!("[db] could not store downlinks for {id}: {e}");
         }
+        println!("[downlink] {id}: queued at TTN {:?}, one is delivered after each uplink", queue);
         if let Some(d) = self.devices.get_mut(id) {
-            d.pending_interval_min = Some(minutes);
+            d.pending = queue;
         }
-        println!("[downlink] {id}: interval {minutes} min queued at TTN, delivered after the next uplink");
     }
 
     pub fn snapshot(&self, now: DateTime<Utc>) -> Vec<DeviceJson> {
@@ -443,9 +510,11 @@ impl Store {
                 position_source: d.position_source,
                 position_accuracy_m: d.position_accuracy_m,
                 interval_min: (d.source == Source::Physical).then_some(d.interval_min),
-                pending_interval_min: d.pending_interval_min,
+                pending_interval_min: d.pending.iter().rev().find_map(|c| match c { Command::Interval(m) => Some(*m as u32), _ => None }),
+                pending_reboot: d.pending.contains(&Command::Reboot),
+                reboot_supported: (d.source == Source::Physical).then_some(d.firmware.map(|fw| fw >= REBOOT_FIRMWARE)).flatten(),
                 powered_up_at: d.powered_up_at.map(iso),
-                firmware: d.firmware.clone(),
+                firmware: d.firmware.map(|(major, minor)| format!("{major}.{minor}")),
                 rssi: d.rssi,
                 snr: d.snr,
             }

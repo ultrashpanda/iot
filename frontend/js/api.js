@@ -51,6 +51,9 @@ export function normalizeDevices(rawDevices) {
       position_source: typeof raw.position_source === 'string' ? raw.position_source : null,
       position_accuracy_m: validNumber(raw.position_accuracy_m, 0, 1e7),
       pending_interval_min: validNumber(raw.pending_interval_min, 1, 240),
+      pending_reboot: raw.pending_reboot === true,
+      reboot_supported: typeof raw.reboot_supported === 'boolean' ? raw.reboot_supported : null,
+      firmware: typeof raw.firmware === 'string' ? raw.firmware : null,
       source: raw.source === 'simulated' ? 'simulated' : raw.source === 'physical' ? 'physical' : 'unknown',
       status: raw.status === 'offline' ? 'offline' : 'online',
       last_updated: Number.isFinite(dateMs) ? new Date(dateMs).toISOString() : null,
@@ -58,13 +61,16 @@ export function normalizeDevices(rawDevices) {
   });
 }
 
-/** Asks the backend to send an interval downlink to a real node. */
-export async function setUplinkInterval(id, minutes) {
-  const response = await fetch(`${CONFIG.API_URL}/${encodeURIComponent(id)}/interval`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes }),
+async function postCommand(id, command, body) {
+  const response = await fetch(`${CONFIG.API_URL}/${encodeURIComponent(id)}/${command}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}),
   });
   if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
 }
+/** Asks the backend to send an interval downlink to a real node. */
+export const setUplinkInterval = (id, minutes) => postCommand(id, 'interval', { minutes });
+/** Asks the backend to send a restart downlink (firmware v0.8+). */
+export const restartNode = (id) => postCommand(id, 'reboot');
 
 export function conditionFor(device, threshold, now = Date.now()) {
   const observed = device.last_updated ? Date.parse(device.last_updated) : NaN;

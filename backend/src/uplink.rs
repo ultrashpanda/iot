@@ -166,6 +166,7 @@ pub enum Downlink {
     Blink,
     Sleep { minutes: Option<u16>, checkin_min: Option<u8> }, // None = until woken; checkin 5..=255
     Wake,
+    Reboot,                                            // firmware v0.8+
 }
 
 #[derive(Debug, PartialEq)]
@@ -182,6 +183,7 @@ impl Downlink {
             Sleep { minutes, checkin_min: None } => sleep(minutes),
             Sleep { minutes, checkin_min: Some(c @ 5..=255) } => { let mut v = sleep(minutes); v.push(c); v }
             Wake => vec![0x05],
+            Reboot => vec![0x06],
             _ => return Err(OutOfRange),
         })
     }
@@ -228,6 +230,7 @@ mod tests {
         assert_eq!(Downlink::Interval { minutes: 0 }.encode(), Err(OutOfRange));
         assert_eq!(Downlink::ScanTime { seconds: 61 }.encode(), Err(OutOfRange));
         assert_eq!(Downlink::Sleep { minutes: None, checkin_min: Some(4) }.encode(), Err(OutOfRange));
+        assert_eq!(Downlink::Reboot.encode().unwrap(), hex("06"));
     }
 
     // ---- firmware v0.3+ formats ----

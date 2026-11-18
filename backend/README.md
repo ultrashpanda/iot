@@ -48,6 +48,17 @@ When the backend serves the frontend, it switches `DATA_MODE` to `'api'` on the 
 The Google key must have the Geolocation API enabled and must **not** be restricted to websites
 (referrers), because the server calls Google directly.
 
+## Commands for a real node
+
+Select a real node on the map. Under the measurements:
+
+- **Uplink interval** + **Apply** → downlink `01 mm` (`POST /api/devices/{id}/interval`).
+- **Restart node** (click twice) → downlink `06` (`POST /api/devices/{id}/reboot`). Needs
+  firmware v0.8 or later; the button is disabled for nodes that report an older version on port 4.
+
+The backend keeps the node's TTN downlink queue: a new interval replaces a queued one, a restart
+always goes last, and TTN delivers one command after each uplink.
+
 ## Change a node's uplink interval
 
 Select a real node on the map, pick an interval under the measurements and press **Apply**.

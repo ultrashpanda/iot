@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 
-use crate::store::{iso, Store};
+use crate::store::{iso, Command, Store};
 use crate::ttn::Ttn;
 use crate::uplink::Downlink;
 
@@ -31,6 +31,7 @@ pub fn router(store: Shared, ttn: Option<Ttn>, frontend: PathBuf) -> Router {
     Router::new()
         .route("/api/devices", get(devices))
         .route("/api/devices/:id/interval", post(set_interval))
+        .route("/api/devices/:id/reboot", post(reboot))
         .route("/js/config.js", get(move || frontend_config(config_js.clone())))
         .fallback_service(ServeDir::new(frontend))
         // Always revalidate, so the browser never mixes a new index.html with an old app.js.
@@ -49,23 +50,36 @@ struct IntervalRequest {
     minutes: u8,
 }
 
-/// POST /api/devices/{id}/interval {"minutes": 5} → downlink 01 mm to that node via TTN.
+/// POST /api/devices/{id}/interval {"minutes": 5} → downlink 01 mm.
 async fn set_interval(State(app): State<AppState>, Path(id): Path<String>, Json(req): Json<IntervalRequest>) -> Response {
+    if !(1..=240).contains(&req.minutes) {
+        return (StatusCode::BAD_REQUEST, "minutes must be 1 to 240").into_response();
+    }
+    send_command(app, id, Command::Interval(req.minutes)).await
+}
+
+/// POST /api/devices/{id}/reboot → downlink 06 (firmware v0.8+).
+async fn reboot(State(app): State<AppState>, Path(id): Path<String>) -> Response {
+    send_command(app, id, Command::Reboot).await
+}
+
+/// Works out the node's new TTN queue, sends it (replacing the old one) and records it.
+async fn send_command(app: AppState, id: String, cmd: Command) -> Response {
     let Some(ttn) = app.ttn.clone() else {
         return (StatusCode::SERVICE_UNAVAILABLE, "TTN is not connected: set TTN_API_KEY in backend/.env").into_response();
     };
-    let Ok(bytes) = (Downlink::Interval { minutes: req.minutes }).encode() else {
-        return (StatusCode::BAD_REQUEST, "minutes must be 1 to 240").into_response();
+    let planned = app.store.lock().unwrap().plan_command(&id, cmd);
+    let queue = match planned {
+        Ok(queue) => queue,
+        Err(e) => return (StatusCode::CONFLICT, e).into_response(),
     };
-    let known = app.store.lock().unwrap().is_physical(&id);
-    if !known {
-        return (StatusCode::NOT_FOUND, format!("{id} is not a real node")).into_response();
-    }
-    if let Err(e) = ttn.send_downlink(&id, Downlink::PORT, &bytes).await {
+    let payloads: Vec<Vec<u8>> = queue.iter().filter_map(|c| c.downlink().encode().ok()).collect();
+    if let Err(e) = ttn.replace_downlinks(&id, Downlink::PORT, &payloads).await {
         return (StatusCode::BAD_GATEWAY, e).into_response();
     }
-    app.store.lock().unwrap().record_interval_downlink(&id, req.minutes as u32, &bytes);
-    (StatusCode::ACCEPTED, Json(json!({ "id": id, "pending_interval_min": req.minutes }))).into_response()
+    let queued = queue.len();
+    app.store.lock().unwrap().commit_queue(&id, queue);
+    (StatusCode::ACCEPTED, Json(json!({ "id": id, "queued": queued }))).into_response()
 }
 
 /// The frontend defaults to demo mode. When this backend serves it, switch it to the real API
