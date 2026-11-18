@@ -31,12 +31,12 @@ pub fn load_device_config(path: &str) -> HashMap<String, DeviceConfig> {
         Ok(text) => match serde_json::from_str(&text) {
             Ok(map) => map,
             Err(e) => {
-                eprintln!("[config] {path} is not valid JSON ({e}). Real nodes get a placeholder position.");
+                eprintln!("{} [config] {path} is not valid JSON ({e}). Real nodes get a placeholder position.", crate::source::hms());
                 HashMap::new()
             }
         },
         Err(_) => {
-            println!("[config] no {path}: real nodes get a placeholder position (see devices.example.json)");
+            println!("{} [config] no {path}: real nodes get a placeholder position (see devices.example.json)", crate::source::hms());
             HashMap::new()
         }
     }
@@ -257,7 +257,7 @@ impl Store {
         for id in configured {
             store.device_mut(&id, Source::Physical);
         }
-        println!("[db] {path}: replayed {} stored uplinks from {} devices", history.len(), store.devices.len());
+        println!("{} [db] {path}: replayed {} stored uplinks from {} devices", crate::source::hms(), history.len(), store.devices.len());
         Ok(store)
     }
 
@@ -282,10 +282,10 @@ impl Store {
                             (SELECT MIN(id) FROM downlinks WHERE dev_id = ?1 AND state = 'pending')",
                         params![raw.dev_id],
                     ) {
-                        eprintln!("[db] could not update downlinks for {}: {e}", raw.dev_id);
+                        eprintln!("{} [db] could not update downlinks for {}: {e}", crate::source::hms(), raw.dev_id);
                     }
                 }
-                Err(e) => eprintln!("[db] could not store uplink from {}: {e}", raw.dev_id),
+                Err(e) => eprintln!("{} [db] could not store uplink from {}: {e}", crate::source::hms(), raw.dev_id),
             }
         }
 
@@ -297,14 +297,14 @@ impl Store {
         match &decoded {
             Ok(Uplink::Measurement(m)) => {
                 println!(
-                    "[uplink] {} port 1 #{}: {:.1} dB avg, {:.1} dB peak, crowd {:?}, {:?} °C, {:?} %, battery {:?}",
+                    "{} [uplink] {} port 1 #{}: {:.1} dB avg, {:.1} dB peak, crowd {:?}, {:?} °C, {:?} %, battery {:?}", crate::source::hms(),
                     raw.dev_id, raw.f_cnt, m.noise_avg, m.noise_peak, m.crowd.as_ref().map(|c| c.count),
                     m.temperature, m.humidity, m.battery.map(|b| b.pct)
                 );
                 self.store_measurement(&raw, m);
             }
-            Ok(other) => println!("[uplink] {} port {} #{}: {:?}", raw.dev_id, raw.port, raw.f_cnt, other),
-            Err(e) => eprintln!("[uplink] {} port {} #{}: {e}. Raw bytes kept: {}", raw.dev_id, raw.port, raw.f_cnt, hex.join(" ")),
+            Ok(other) => println!("{} [uplink] {} port {} #{}: {:?}", crate::source::hms(), raw.dev_id, raw.port, raw.f_cnt, other),
+            Err(e) => eprintln!("{} [uplink] {} port {} #{}: {e}. Raw bytes kept: {}", crate::source::hms(), raw.dev_id, raw.port, raw.f_cnt, hex.join(" ")),
         }
         match decoded {
             Ok(Uplink::Geolocation(aps)) => Some(GeoRequest { dev_id: raw.dev_id, received_at: raw.received_at, aps }),
@@ -325,12 +325,12 @@ impl Store {
                     fix.map(|f| f.lat), fix.map(|f| f.lon), fix.map(|f| f.accuracy_m), error],
         );
         if let Err(e) = result {
-            eprintln!("[db] could not store Wi-Fi scan from {}: {e}", req.dev_id);
+            eprintln!("{} [db] could not store Wi-Fi scan from {}: {e}", crate::source::hms(), req.dev_id);
         }
         if let Some(d) = self.devices.get_mut(&req.dev_id) {
             apply_position(d, req.aps.len(), fix);
             println!(
-                "[geo] {}: {} routers → {} ({:.5}, {:.5}){}",
+                "{} [geo] {}: {} routers → {} ({:.5}, {:.5}){}", crate::source::hms(),
                 req.dev_id, req.aps.len(),
                 match fix { Some(f) => format!("fix ±{:.0} m", f.accuracy_m), None => "no fix".into() },
                 d.lat, d.lon,
@@ -356,7 +356,7 @@ impl Store {
             ],
         );
         if let Err(e) = result {
-            eprintln!("[db] could not store measurement from {}: {e}", raw.dev_id);
+            eprintln!("{} [db] could not store measurement from {}: {e}", crate::source::hms(), raw.dev_id);
         }
     }
 
@@ -368,9 +368,9 @@ impl Store {
             match dev.pending.remove(0) {
                 Command::Interval(m) => {
                     dev.interval_min = m as u32;
-                    println!("[downlink] {}: interval {m} min delivered with this uplink", raw.dev_id);
+                    println!("{} [downlink] {}: interval {m} min delivered with this uplink", crate::source::hms(), raw.dev_id);
                 }
-                Command::Reboot => println!("[downlink] {}: restart delivered with this uplink, node reboots now", raw.dev_id),
+                Command::Reboot => println!("{} [downlink] {}: restart delivered with this uplink, node reboots now", crate::source::hms(), raw.dev_id),
             }
         }
         dev.last_seen = Some(raw.received_at);
@@ -405,7 +405,7 @@ impl Store {
         self.devices.entry(id.to_string()).or_insert_with(|| {
             let (lat, lon) = cfg.map(|c| (c.latitude, c.longitude)).unwrap_or_else(|| spiral(n));
             if cfg.is_none() && source == Source::Physical {
-                println!("[config] new device {id} has no position: add it to devices.json");
+                println!("{} [config] new device {id} has no position: add it to devices.json", crate::source::hms());
             }
             Device {
                 id: id.to_string(),
@@ -476,9 +476,9 @@ impl Store {
             ).map(|_| ());
         }
         if let Err(e) = result {
-            eprintln!("[db] could not store downlinks for {id}: {e}");
+            eprintln!("{} [db] could not store downlinks for {id}: {e}", crate::source::hms());
         }
-        println!("[downlink] {id}: queued at TTN {:?}, one is delivered after each uplink", queue);
+        println!("{} [downlink] {id}: queued at TTN {:?}, one is delivered after each uplink", crate::source::hms(), queue);
         if let Some(d) = self.devices.get_mut(id) {
             d.pending = queue;
         }

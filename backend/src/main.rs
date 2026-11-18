@@ -48,12 +48,12 @@ async fn main() {
     let sim_devices = num("SIMULATOR_DEVICES", 20) as usize;
 
     if !frontend.join("index.html").exists() {
-        eprintln!("[web] no index.html in {}: run from backend/ or set FRONTEND_DIR", frontend.display());
+        eprintln!("{} [web] no index.html in {}: run from backend/ or set FRONTEND_DIR", crate::source::hms(), frontend.display());
     }
 
     let config = store::load_device_config(&devices_file);
     let store = Store::open(&db_path, config, default_interval).unwrap_or_else(|e| {
-        eprintln!("[db] cannot open {db_path}: {e}");
+        eprintln!("{} [db] cannot open {db_path}: {e}", crate::source::hms());
         std::process::exit(1);
     });
     let shared = Arc::new(Mutex::new(store));
@@ -69,7 +69,7 @@ async fn main() {
             Some(ttn::start(cfg, tx.clone()))
         }
         None => {
-            println!("[ttn] TTN_API_KEY not set: real nodes disabled (see .env.example)");
+            println!("{} [ttn] TTN_API_KEY not set: real nodes disabled (see .env.example)", crate::source::hms());
             None
         }
     };
@@ -80,7 +80,7 @@ async fn main() {
 
     let geolocator = var("GOOGLE_API_KEY").map(geo::Geolocator::new);
     if geolocator.is_none() {
-        println!("[geo] GOOGLE_API_KEY not set: Wi-Fi geolocation disabled, positions come from devices.json");
+        println!("{} [geo] GOOGLE_API_KEY not set: Wi-Fi geolocation disabled, positions come from devices.json", crate::source::hms());
     }
 
     let ingest = shared.clone();
@@ -97,7 +97,7 @@ async fn main() {
                     match geolocator.locate(&req.aps).await {
                         Ok(fix) => (Some(fix), None),
                         Err(e) => {
-                            eprintln!("[geo] {}: {e}", req.dev_id);
+                            eprintln!("{} [geo] {}: {e}", crate::source::hms(), req.dev_id);
                             (None, Some(e))
                         }
                     }
@@ -108,13 +108,13 @@ async fn main() {
     });
 
     let addr: SocketAddr = format!("{host}:{port}").parse().unwrap_or_else(|e| {
-        eprintln!("[web] bad HOST/PORT {host}:{port}: {e}");
+        eprintln!("{} [web] bad HOST/PORT {host}:{port}: {e}", crate::source::hms());
         std::process::exit(1);
     });
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap_or_else(|e| {
-        eprintln!("[web] cannot listen on {addr}: {e}");
+        eprintln!("{} [web] cannot listen on {addr}: {e}", crate::source::hms());
         std::process::exit(1);
     });
-    println!("[web] map on http://localhost:{port}  ·  API on http://localhost:{port}/api/devices");
+    println!("{} [web] map on http://localhost:{port}  ·  API on http://localhost:{port}/api/devices", crate::source::hms());
     axum::serve(listener, api::router(shared, ttn, frontend)).await.expect("server error");
 }

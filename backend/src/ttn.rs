@@ -49,23 +49,30 @@ pub fn start(cfg: TtnConfig, tx: Sender<RawUplink>) -> Ttn {
     opts.set_transport(Transport::tls_with_default_config());
 
     let (client, eventloop) = AsyncClient::new(opts, 10);
-    println!("[ttn] connecting to {} as {}@ttn", cfg.host, cfg.app_id);
-    let topic = format!("v3/{}@ttn/devices/+/up", cfg.app_id);
-    tokio::spawn(run(client.clone(), eventloop, topic, tx));
+    println!("{} [ttn] connecting to {} as {}@ttn", crate::source::hms(), cfg.host, cfg.app_id);
+    let topics = vec![
+        format!("v3/{}@ttn/devices/+/up", cfg.app_id),
+        // What TTN does with our downlinks: queued, sent (to a gateway), failed, nack ...
+        format!("v3/{}@ttn/devices/+/down/+", cfg.app_id),
+    ];
+    tokio::spawn(run(client.clone(), eventloop, topics, tx));
     Ttn { client, app_id: cfg.app_id }
 }
 
-async fn run(client: AsyncClient, mut eventloop: EventLoop, topic: String, tx: Sender<RawUplink>) {
+async fn run(client: AsyncClient, mut eventloop: EventLoop, topics: Vec<String>, tx: Sender<RawUplink>) {
     loop {
         match eventloop.poll().await {
             // Subscribe on every (re)connect: a clean session forgets subscriptions.
             Ok(Event::Incoming(Packet::ConnAck(_))) => {
-                println!("[ttn] connected, subscribing to {topic}");
-                if let Err(e) = client.try_subscribe(topic.clone(), QoS::AtLeastOnce) {
-                    eprintln!("[ttn] subscribe failed: {e}");
+                println!("{} [ttn] connected, subscribing to uplinks and downlink events", crate::source::hms());
+                for topic in &topics {
+                    if let Err(e) = client.try_subscribe(topic.clone(), QoS::AtLeastOnce) {
+                        eprintln!("{} [ttn] subscribe to {topic} failed: {e}", crate::source::hms());
+                    }
                 }
             }
-            Ok(Event::Incoming(Packet::SubAck(_))) => println!("[ttn] subscribed, waiting for uplinks"),
+            Ok(Event::Incoming(Packet::SubAck(_))) => println!("{} [ttn] subscribed", crate::source::hms()),
+            Ok(Event::Incoming(Packet::Publish(p))) if p.topic.contains("/down/") => log_downlink_event(&p.topic, &p.payload),
             Ok(Event::Incoming(Packet::Publish(p))) => match parse_uplink(&p.payload) {
                 Ok(Some(up)) => {
                     if tx.send(up).await.is_err() {
@@ -73,15 +80,43 @@ async fn run(client: AsyncClient, mut eventloop: EventLoop, topic: String, tx: S
                     }
                 }
                 Ok(None) => {} // uplink without application payload (MAC only)
-                Err(e) => eprintln!("[ttn] ignored message on {}: {e}", p.topic),
+                Err(e) => eprintln!("{} [ttn] ignored message on {}: {e}", crate::source::hms(), p.topic),
             },
-            Ok(Event::Outgoing(Outgoing::Publish(_))) => println!("[ttn] downlink sent to TTN"),
+            Ok(Event::Outgoing(Outgoing::Publish(_))) => println!("{} [ttn] downlink handed to TTN, waiting for its 'queued' event", crate::source::hms()),
             Ok(_) => {}
             Err(e) => {
-                eprintln!("[ttn] connection error: {e}. Check TTN_API_KEY (rights) and TTN_APP_ID. Retrying in 5 s");
+                eprintln!("{} [ttn] connection error: {e}. Check TTN_API_KEY (rights) and TTN_APP_ID. Retrying in 5 s", crate::source::hms());
                 tokio::time::sleep(Duration::from_secs(5)).await;
             }
         }
+    }
+}
+
+/// Logs TTN's downlink events: v3/{app}@ttn/devices/{dev}/down/{queued|sent|ack|nack|failed}.
+fn log_downlink_event(topic: &str, body: &[u8]) {
+    let parts: Vec<&str> = topic.split('/').collect();
+    let (Some(dev), Some(event)) = (parts.get(3), parts.last()) else { return };
+    if matches!(*event, "push" | "replace") {
+        return; // our own command topics
+    }
+    let v: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
+    let key = format!("downlink_{event}");
+    let msg = if v[&key].is_object() { &v[&key] } else { &v["downlink_failed"]["downlink"] };
+    let bytes = msg["frm_payload"].as_str().and_then(|b| B64.decode(b).ok()).unwrap_or_default();
+    let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02X}")).collect();
+    let error = v["downlink_failed"]["error"]["message_format"].as_str()
+        .or_else(|| v["downlink_failed"]["error"]["name"].as_str());
+    let meaning = match *event {
+        "queued" => "TTN accepted it, it goes out after the next uplink",
+        "sent" => "sent to a gateway, the node should apply it now",
+        "ack" => "the node confirmed it",
+        "nack" => "the node did not confirm it, TTN retries",
+        "failed" => "TTN could not send it",
+        _ => "",
+    };
+    match error {
+        Some(e) => eprintln!("{} [ttn] downlink {event} for {dev}: {} ({meaning}): {e}", crate::source::hms(), hex.join(" ")),
+        None => println!("{} [ttn] downlink {event} for {dev}: {} ({meaning})", crate::source::hms(), hex.join(" ")),
     }
 }
 

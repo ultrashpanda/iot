@@ -69,7 +69,7 @@ pub async fn run(tx: Sender<RawUplink>, count: usize, every: Duration) {
     let mut sims: Vec<Sim> = (0..count).map(|_| Sim::new(&mut rng)).collect();
     let mut tick = tokio::time::interval(every);
     let mut f_cnt = 0u32;
-    println!("[sim] {count} simulated devices, one uplink each every {} s", every.as_secs());
+    println!("{} [sim] {count} simulated devices, one uplink each every {} s", crate::source::hms(), every.as_secs());
     loop {
         tick.tick().await;
         f_cnt = f_cnt.wrapping_add(1);

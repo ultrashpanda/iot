@@ -3,6 +3,9 @@
 
 use chrono::{DateTime, Utc};
 
+/// Local clock time for log lines.
+pub fn hms() -> String { chrono::Local::now().format("%H:%M:%S").to_string() }
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Source { Physical, Simulated }
 
