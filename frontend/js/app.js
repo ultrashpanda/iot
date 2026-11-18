@@ -204,9 +204,10 @@ function renderSleepControl(d) {
   const sleepQueued = d.pending_sleep_min !== null;
   $('sleep-button').textContent = sleepQueued || asleep ? 'Change sleep' : 'Sleep';
   $('sleep-button').disabled = d.pending_wake;
-  $('wake-button').hidden = !(asleep || sleepQueued);
-  $('wake-button').textContent = asleep ? 'Wake' : 'Cancel sleep';
-  $('wake-button').disabled = d.pending_wake;
+  // Always visible, so it is easy to find; only active when there is something to wake or cancel.
+  $('wake-button').textContent = !asleep && sleepQueued ? 'Cancel sleep' : 'Wake';
+  $('wake-button').disabled = d.pending_wake || !(asleep || sleepQueued);
+  $('wake-button').title = asleep || sleepQueued ? '' : 'The node is awake';
   if (state.sleepMessage) return;
   const queued = sleepQueued
     ? `Sleep ${d.pending_sleep_min === 0 ? 'until woken' : minutesText(d.pending_sleep_min)} queued (check-in every ${minutesText(d.pending_sleep_checkin_min ?? 30)}), starts after the next uplink`

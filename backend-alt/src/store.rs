@@ -57,6 +57,8 @@ pub struct Device {
     checkin_min: u32,
     /// From the last uplink if it was a port 3 check-in: Some(None) = asleep until woken.
     last_checkin: Option<Option<u16>>,
+    /// Sleep delivered or last uplink a check-in, until a measurement, boot or wake shows it awake.
+    asleep: bool,
     last_seen: Option<DateTime<Utc>>,
     last_port: Option<u8>,
     last: Option<Measurement>,
@@ -398,24 +400,10 @@ impl Store {
     fn apply(&mut self, raw: &RawUplink) -> Result<Uplink, DecodeError> {
         let decoded = uplink::decode(raw.port, &raw.payload);
         let dev = self.device_mut(&raw.dev_id, raw.source);
-        if !dev.pending.is_empty() {
-            match dev.pending.remove(0) {
-                Command::Interval(m) => {
-                    dev.interval_min = m as u32;
-                    println!("{} [downlink] {}: interval {m} min delivered with this uplink", crate::source::hms(), raw.dev_id);
-                }
-                Command::Sleep { minutes, checkin_min } => {
-                    dev.checkin_min = checkin_min as u32;
-                    let how_long = if minutes == 0 { "until woken".to_string() } else { format!("for {minutes} min") };
-                    println!("{} [downlink] {}: sleep {how_long} delivered, check-in every {checkin_min} min", crate::source::hms(), raw.dev_id);
-                }
-                Command::Wake => println!("{} [downlink] {}: wake delivered with this check-in", crate::source::hms(), raw.dev_id),
-                Command::Reboot => println!("{} [downlink] {}: restart delivered with this uplink, node reboots now", crate::source::hms(), raw.dev_id),
-            }
-        }
         dev.last_seen = Some(raw.received_at);
         dev.last_port = Some(raw.port);
         dev.last_checkin = None; // set again below if this is a check-in
+        dev.asleep = raw.port == 3; // a check-in means asleep, anything else means awake
         dev.rssi = raw.rssi;
         dev.snr = raw.snr;
         match &decoded {
@@ -436,6 +424,29 @@ impl Store {
             }
             Ok(Uplink::Boot(b)) => dev.firmware = Some((b.fw_major, b.fw_minor)),
             Err(_) => {}
+        }
+        if !dev.pending.is_empty() {
+            match dev.pending.remove(0) {
+                Command::Interval(m) => {
+                    dev.interval_min = m as u32;
+                    println!("{} [downlink] {}: interval {m} min delivered with this uplink", crate::source::hms(), raw.dev_id);
+                }
+                Command::Sleep { minutes, checkin_min } => {
+                    dev.checkin_min = checkin_min as u32;
+                    dev.asleep = true; // the node sleeps from now on, its first check-in follows later
+                    dev.last_checkin = Some((minutes != 0).then_some(minutes)); // until the first check-in reports it
+                    let how_long = if minutes == 0 { "until woken".to_string() } else { format!("for {minutes} min") };
+                    println!("{} [downlink] {}: sleep {how_long} delivered, check-in every {checkin_min} min", crate::source::hms(), raw.dev_id);
+                }
+                Command::Wake => {
+                    dev.asleep = false;
+                    println!("{} [downlink] {}: wake delivered with this check-in", crate::source::hms(), raw.dev_id);
+                }
+                Command::Reboot => {
+                    dev.asleep = false; // a restart always wakes the node
+                    println!("{} [downlink] {}: restart delivered with this uplink, node reboots now", crate::source::hms(), raw.dev_id);
+                }
+            }
         }
         decoded
     }
@@ -463,6 +474,7 @@ impl Store {
                 pending: Vec::new(),
                 checkin_min: 30,
                 last_checkin: None,
+                asleep: false,
                 last_seen: None,
                 last_port: None,
                 last: None,
@@ -499,7 +511,7 @@ impl Store {
             }
             Command::Wake => {
                 let sleep_queued = queue.iter().any(|c| matches!(c, Command::Sleep { .. }));
-                let asleep = d.last_port == Some(3);
+                let asleep = d.asleep;
                 queue.retain(|c| !c.is_sleep_or_wake());
                 if asleep {
                     let at = queue.iter().position(|c| *c == Command::Reboot).unwrap_or(queue.len());
@@ -598,9 +610,8 @@ fn crowd_source_str(s: CrowdSource) -> &'static str {
 fn status(d: &Device, now: DateTime<Utc>) -> &'static str {
     let Some(seen) = d.last_seen else { return "offline" };
     let age = now - seen;
-    match d.last_port {
-        Some(3) if age <= Duration::minutes(2 * d.checkin_min as i64) => "sleeping",
-        Some(p) if p != 3 && age <= Duration::minutes(3 * d.interval_min as i64) => "online",
-        _ => "offline",
+    if d.asleep {
+        return if age <= Duration::minutes(2 * d.checkin_min as i64) { "sleeping" } else { "offline" };
     }
+    if age <= Duration::minutes(3 * d.interval_min as i64) { "online" } else { "offline" }
 }
