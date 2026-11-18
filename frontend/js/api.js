@@ -46,11 +46,21 @@ export function normalizeDevices(rawDevices) {
       crowd_count: validNumber(raw.crowd_count, 0, 65535),
       crowd_source: raw.crowd_source === 'networks' ? 'networks' : 'phones',
       rssi: validNumber(raw.rssi, -200, 0),
+      interval_min: validNumber(raw.interval_min, 1, 240),
+      pending_interval_min: validNumber(raw.pending_interval_min, 1, 240),
       source: raw.source === 'simulated' ? 'simulated' : raw.source === 'physical' ? 'physical' : 'unknown',
       status: raw.status === 'offline' ? 'offline' : 'online',
       last_updated: Number.isFinite(dateMs) ? new Date(dateMs).toISOString() : null,
     }];
   });
+}
+
+/** Asks the backend to send an interval downlink to a real node. */
+export async function setUplinkInterval(id, minutes) {
+  const response = await fetch(`${CONFIG.API_URL}/${encodeURIComponent(id)}/interval`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes }),
+  });
+  if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
 }
 
 export function conditionFor(device, threshold, now = Date.now()) {

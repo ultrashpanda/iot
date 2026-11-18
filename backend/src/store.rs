@@ -49,6 +49,8 @@ pub struct Device {
     source: Source,
     might_have_moved: bool,
     interval_min: u32,
+    /// Interval sent by downlink, applied when the node's next uplink arrives (class A).
+    pending_interval_min: Option<u32>,
     checkin_min: u32,
     last_seen: Option<DateTime<Utc>>,
     last_port: Option<u8>,
@@ -83,6 +85,8 @@ pub struct DeviceJson {
     source: &'static str,
     last_updated: Option<String>,
     // Extras, not in the Team 3 contract yet:
+    interval_min: Option<u32>,         // physical nodes only
+    pending_interval_min: Option<u32>, // sent, not yet delivered
     last_seen: Option<String>,
     powered_up_at: Option<String>,
     firmware: Option<String>,
@@ -119,7 +123,10 @@ impl Store {
                 dev_id TEXT NOT NULL, received_at TEXT NOT NULL, f_cnt INTEGER NOT NULL, raw BLOB NOT NULL,
                 noise_avg REAL, noise_peak REAL, noise_clipped INTEGER NOT NULL, crowd_count INTEGER,
                 crowd_source TEXT, temperature REAL, humidity INTEGER, flags INTEGER NOT NULL,
-                battery_pct INTEGER, battery_rest_v REAL, battery_load_v REAL, rssi INTEGER, snr REAL);",
+                battery_pct INTEGER, battery_rest_v REAL, battery_load_v REAL, rssi INTEGER, snr REAL);
+             CREATE TABLE IF NOT EXISTS downlinks (
+                id INTEGER PRIMARY KEY, dev_id TEXT NOT NULL, created_at TEXT NOT NULL, port INTEGER NOT NULL,
+                bytes BLOB NOT NULL, kind TEXT NOT NULL, value INTEGER, state TEXT NOT NULL);",
         )?;
 
         let history = {
@@ -146,6 +153,20 @@ impl Store {
         for raw in &history {
             let _ = store.apply(raw);
         }
+        // Interval downlinks: 'sent' ones are the node's current interval, a 'pending' one is still queued at TTN.
+        let downlinks = {
+            let mut stmt = store.db.prepare(
+                "SELECT dev_id, value, state FROM downlinks WHERE kind = 'interval' ORDER BY created_at",
+            )?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))?;
+            let downlinks: Vec<(String, i64, String)> = rows.collect::<rusqlite::Result<_>>()?;
+            downlinks
+        };
+        for (dev_id, minutes, state) in downlinks {
+            if let Some(d) = store.devices.get_mut(&dev_id) {
+                if state == "sent" { d.interval_min = minutes as u32 } else { d.pending_interval_min = Some(minutes as u32) }
+            }
+        }
         // Configured nodes show up on the map (as offline) before their first uplink.
         let configured: Vec<String> = store.config.keys().cloned().collect();
         for id in configured {
@@ -168,7 +189,15 @@ impl Store {
             );
             match inserted {
                 Ok(0) => return, // duplicate (dev_id, f_cnt, received_at)
-                Ok(_) => {}
+                Ok(_) => {
+                    // TTN delivers a queued downlink right after this uplink.
+                    if let Err(e) = self.db.execute(
+                        "UPDATE downlinks SET state = 'sent' WHERE dev_id = ?1 AND state = 'pending'",
+                        params![raw.dev_id],
+                    ) {
+                        eprintln!("[db] could not update downlinks for {}: {e}", raw.dev_id);
+                    }
+                }
                 Err(e) => eprintln!("[db] could not store uplink from {}: {e}", raw.dev_id),
             }
         }
@@ -217,6 +246,10 @@ impl Store {
     fn apply(&mut self, raw: &RawUplink) -> Result<Uplink, DecodeError> {
         let decoded = uplink::decode(raw.port, &raw.payload);
         let dev = self.device_mut(&raw.dev_id, raw.source);
+        if let Some(minutes) = dev.pending_interval_min.take() {
+            dev.interval_min = minutes;
+            println!("[downlink] {}: interval {minutes} min delivered with this uplink", raw.dev_id);
+        }
         dev.last_seen = Some(raw.received_at);
         dev.last_port = Some(raw.port);
         dev.rssi = raw.rssi;
@@ -260,6 +293,7 @@ impl Store {
                 // Without a configured position we can't know where a real node is.
                 might_have_moved: cfg.is_none() && source == Source::Physical,
                 interval_min: cfg.and_then(|c| c.interval_min).unwrap_or(default_interval),
+                pending_interval_min: None,
                 checkin_min: 30,
                 last_seen: None,
                 last_port: None,
@@ -273,6 +307,30 @@ impl Store {
                 snr: None,
             }
         })
+    }
+
+    pub fn is_physical(&self, id: &str) -> bool {
+        self.devices.get(id).is_some_and(|d| d.source == Source::Physical)
+    }
+
+    /// Records an interval downlink that was handed to TTN. It becomes the interval on the next uplink.
+    pub fn record_interval_downlink(&mut self, id: &str, minutes: u32, bytes: &[u8]) {
+        // A newer command replaces the queue at TTN, so older pending rows will never be delivered.
+        let result = self.db.execute(
+            "UPDATE downlinks SET state = 'replaced' WHERE dev_id = ?1 AND state = 'pending'",
+            params![id],
+        ).and_then(|_| self.db.execute(
+            "INSERT INTO downlinks (dev_id, created_at, port, bytes, kind, value, state)
+             VALUES (?1, ?2, 1, ?3, 'interval', ?4, 'pending')",
+            params![id, iso(Utc::now()), bytes, minutes as i64],
+        ));
+        if let Err(e) = result {
+            eprintln!("[db] could not store downlink for {id}: {e}");
+        }
+        if let Some(d) = self.devices.get_mut(id) {
+            d.pending_interval_min = Some(minutes);
+        }
+        println!("[downlink] {id}: interval {minutes} min queued at TTN, delivered after the next uplink");
     }
 
     pub fn snapshot(&self, now: DateTime<Utc>) -> Vec<DeviceJson> {
@@ -298,6 +356,8 @@ impl Store {
                 source: d.source.as_str(),
                 last_updated: d.measured_at.map(iso),
                 last_seen: d.last_seen.map(iso),
+                interval_min: (d.source == Source::Physical).then_some(d.interval_min),
+                pending_interval_min: d.pending_interval_min,
                 powered_up_at: d.powered_up_at.map(iso),
                 firmware: d.firmware.clone(),
                 rssi: d.rssi,

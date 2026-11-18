@@ -1,8 +1,8 @@
 import { CONFIG } from './config.js';
-import { fetchDevices, normalizeDevices, conditionFor } from './api.js';
+import { fetchDevices, normalizeDevices, conditionFor, setUplinkInterval } from './api.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { allDevices: [], devices: [], threshold: initialThreshold(), belowOnly: false, realOnly: initialRealOnly(), selectedId: null, map: null, markers: new Map(), refreshing: false };
+const state = { allDevices: [], devices: [], threshold: initialThreshold(), belowOnly: false, realOnly: initialRealOnly(), selectedId: null, map: null, markers: new Map(), refreshing: false, intervalFor: null, intervalMessage: null };
 
 function initialThreshold() {
   try {
@@ -150,6 +150,7 @@ function renderDetail() {
     for (const id of ['detail-avg', 'detail-peak', 'detail-crowd', 'detail-temp', 'detail-humidity', 'detail-battery', 'detail-signal']) $(id).textContent = '—';
     $('detail-source').textContent = 'Select a sensor on the map or in the list.';
     $('detail-time').textContent = '';
+    renderIntervalControl(null);
     return;
   }
   const condition = conditionFor(d, state.threshold);
@@ -167,6 +168,40 @@ function renderDetail() {
   $('detail-signal').textContent = formatReading(d.rssi, 'dBm');
   $('detail-source').textContent = d.source === 'simulated' ? 'Simulated reading · illustrative location' : d.source === 'physical' ? 'Physical sensor · prototype measurement' : 'Sensor source unspecified';
   $('detail-time').textContent = relativeTime(d.last_updated);
+  renderIntervalControl(d);
+}
+
+/** Only for real nodes on a backend that reports interval_min (sends a TTN downlink). */
+function renderIntervalControl(d) {
+  const box = $('interval-control');
+  box.hidden = !d || d.source !== 'physical' || d.interval_min === null;
+  if (box.hidden) return;
+  if (state.intervalFor !== d.id) { // don't override the user's choice on every 5 s refresh
+    state.intervalFor = d.id;
+    $('interval-select').value = String(d.pending_interval_min ?? d.interval_min);
+  }
+  if (state.intervalMessage) return;
+  $('interval-status').textContent = d.pending_interval_min !== null
+    ? `Now ${d.interval_min} min · ${d.pending_interval_min} min pending, applies after the next uplink`
+    : `Now ${d.interval_min} min`;
+}
+
+async function applyInterval() {
+  const d = getSelected();
+  if (!d) return;
+  const minutes = Number($('interval-select').value);
+  $('interval-apply').disabled = true;
+  try {
+    await setUplinkInterval(d.id, minutes);
+    state.intervalMessage = null;
+    await refresh();
+  } catch (err) {
+    state.intervalMessage = `Could not send: ${err.message}`;
+    $('interval-status').textContent = state.intervalMessage;
+    setTimeout(() => { state.intervalMessage = null; renderDetail(); }, 8000);
+  } finally {
+    $('interval-apply').disabled = false;
+  }
 }
 function renderEverything() { renderThresholdWarning(); renderStats(); renderMap(); renderList(); renderDetail(); }
 function renderThresholdWarning() { $('threshold-warning').hidden = state.threshold <= 80; }
@@ -227,6 +262,7 @@ function init() {
     applySourceFilter();
     renderEverything();
   });
+  $('interval-apply').addEventListener('click', applyInterval);
   $('refresh-button').addEventListener('click', refresh);
   initMap();
   setConnection('loading');

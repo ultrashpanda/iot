@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use chrono::{DateTime, Utc};
-use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS, Transport};
+use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Outgoing, Packet, QoS, Transport};
 use serde_json::Value;
 use tokio::sync::mpsc::Sender;
 
@@ -16,7 +16,30 @@ pub struct TtnConfig {
     pub api_key: String,
 }
 
-pub async fn run(cfg: TtnConfig, tx: Sender<RawUplink>) {
+/// Handle for sending downlinks. Cheap to clone; the MQTT connection is shared with the uplink loop.
+#[derive(Clone)]
+pub struct Ttn {
+    client: AsyncClient,
+    app_id: String,
+}
+
+impl Ttn {
+    /// Replaces the device's downlink queue at TTN with this one message. TTN delivers it after the
+    /// node's next uplink (class A). Needs the API key right "Write downlink application traffic".
+    pub async fn send_downlink(&self, dev_id: &str, port: u8, bytes: &[u8]) -> Result<(), String> {
+        let topic = format!("v3/{}@ttn/devices/{}/down/replace", self.app_id, dev_id);
+        let body = serde_json::json!({
+            "downlinks": [{ "f_port": port, "frm_payload": B64.encode(bytes), "priority": "NORMAL" }]
+        });
+        self.client
+            .publish(topic, QoS::AtLeastOnce, false, body.to_string())
+            .await
+            .map_err(|e| format!("MQTT publish failed: {e}"))
+    }
+}
+
+/// Connects to TTN, spawns the uplink loop and returns the handle for downlinks.
+pub fn start(cfg: TtnConfig, tx: Sender<RawUplink>) -> Ttn {
     let client_id = format!("soundscape-backend-{}", std::process::id());
     let mut opts = MqttOptions::new(client_id, cfg.host.clone(), 8883);
     opts.set_credentials(format!("{}@ttn", cfg.app_id), cfg.api_key);
@@ -24,10 +47,14 @@ pub async fn run(cfg: TtnConfig, tx: Sender<RawUplink>) {
     opts.set_max_packet_size(256 * 1024, 256 * 1024); // TTN uplink JSON is a few kB
     opts.set_transport(Transport::tls_with_default_config());
 
-    let (client, mut eventloop) = AsyncClient::new(opts, 10);
-    let topic = format!("v3/{}@ttn/devices/+/up", cfg.app_id);
+    let (client, eventloop) = AsyncClient::new(opts, 10);
     println!("[ttn] connecting to {} as {}@ttn", cfg.host, cfg.app_id);
+    let topic = format!("v3/{}@ttn/devices/+/up", cfg.app_id);
+    tokio::spawn(run(client.clone(), eventloop, topic, tx));
+    Ttn { client, app_id: cfg.app_id }
+}
 
+async fn run(client: AsyncClient, mut eventloop: EventLoop, topic: String, tx: Sender<RawUplink>) {
     loop {
         match eventloop.poll().await {
             // Subscribe on every (re)connect: a clean session forgets subscriptions.
@@ -47,9 +74,10 @@ pub async fn run(cfg: TtnConfig, tx: Sender<RawUplink>) {
                 Ok(None) => {} // uplink without application payload (MAC only)
                 Err(e) => eprintln!("[ttn] ignored message on {}: {e}", p.topic),
             },
+            Ok(Event::Outgoing(Outgoing::Publish(_))) => println!("[ttn] downlink sent to TTN"),
             Ok(_) => {}
             Err(e) => {
-                eprintln!("[ttn] connection error: {e}. Check TTN_API_KEY and TTN_APP_ID. Retrying in 5 s");
+                eprintln!("[ttn] connection error: {e}. Check TTN_API_KEY (rights) and TTN_APP_ID. Retrying in 5 s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
             }
         }

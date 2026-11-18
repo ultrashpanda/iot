@@ -36,6 +36,15 @@ ones update every 5 s. Set `SIMULATOR_DEVICES=0` in `.env` to see only real node
 When the backend serves the frontend, it switches `DATA_MODE` to `'api'` on the fly, so
 `frontend/js/config.js` does not need editing.
 
+## Change a node's uplink interval
+
+Select a real node on the map, pick an interval under the measurements and press **Apply**.
+The backend sends downlink `01 mm` to TTN (`POST /api/devices/{id}/interval`). TTN delivers it
+after the node's next uplink, so the panel shows it as pending until then.
+
+The TTN API key needs the right **Write downlink application traffic**. Mind TTN fair use
+(30 s airtime per node per day): at SF12 keep the interval at 75 min or more.
+
 ## Files
 
 | File | |
@@ -59,4 +68,4 @@ Delete the file to start fresh.
 
 ## Not done yet
 
-Downlinks, Google geolocation from port 2, Docker.
+Other downlinks (scan time, blink, sleep, wake), Google geolocation from port 2, Docker.

@@ -58,17 +58,20 @@ async fn main() {
     let shared = Arc::new(Mutex::new(store));
 
     let (tx, mut rx) = mpsc::channel::<RawUplink>(256);
-    match var("TTN_API_KEY") {
+    let ttn = match var("TTN_API_KEY") {
         Some(api_key) => {
             let cfg = ttn::TtnConfig {
                 app_id: var("TTN_APP_ID").unwrap_or_else(|| "soundscape".into()),
                 host: var("TTN_MQTT_HOST").unwrap_or_else(|| "eu1.cloud.thethings.network".into()),
                 api_key,
             };
-            tokio::spawn(ttn::run(cfg, tx.clone()));
+            Some(ttn::start(cfg, tx.clone()))
         }
-        None => println!("[ttn] TTN_API_KEY not set: real nodes disabled (see .env.example)"),
-    }
+        None => {
+            println!("[ttn] TTN_API_KEY not set: real nodes disabled (see .env.example)");
+            None
+        }
+    };
     if sim_devices > 0 {
         tokio::spawn(simulator::run(tx.clone(), sim_devices, Duration::from_secs(5)));
     }
@@ -90,5 +93,5 @@ async fn main() {
         std::process::exit(1);
     });
     println!("[web] map on http://localhost:{port}  ·  API on http://localhost:{port}/api/devices");
-    axum::serve(listener, api::router(shared, frontend)).await.expect("server error");
+    axum::serve(listener, api::router(shared, ttn, frontend)).await.expect("server error");
 }
