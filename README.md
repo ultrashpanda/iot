@@ -30,16 +30,17 @@ flowchart LR
 ## Try it without hardware
 
 ```bash
-git clone https://github.com/ultrashpanda/iot && cd iot
-docker compose up
+git clone https://github.com/ultrashpanda/iot && cd iot/backend
+cargo run
 ```
 
-The simulator adds fake devices, so the map is live straight away.
+Then open http://localhost:8080. The simulator adds 20 fake devices, so the map is live straight away.
+For real nodes, see [backend/README.md](backend/README.md).
 
 ## Status
 
 - [ ] MCU firmware
-- [ ] Backend
+- [x] Backend (MVP: TTN MQTT, simulator, SQLite, API)
 - [ ] Frontend
 
 ## Team and license
