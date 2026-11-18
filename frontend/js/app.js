@@ -147,7 +147,7 @@ function renderDetail() {
     $('detail-title').textContent = 'Choose a location';
     $('detail-status').className = 'detail-status';
     $('detail-status').textContent = '—';
-    for (const id of ['detail-avg', 'detail-peak', 'detail-temp', 'detail-humidity', 'detail-battery']) $(id).textContent = '—';
+    for (const id of ['detail-avg', 'detail-peak', 'detail-crowd', 'detail-temp', 'detail-humidity', 'detail-battery', 'detail-signal']) $(id).textContent = '—';
     $('detail-source').textContent = 'Select a sensor on the map or in the list.';
     $('detail-time').textContent = '';
     return;
@@ -160,7 +160,11 @@ function renderDetail() {
   $('detail-peak').textContent = formatReading(d.noise_peak, 'dB');
   $('detail-temp').textContent = formatReading(d.temperature, '°C', 1);
   $('detail-humidity').textContent = formatReading(d.humidity, '%', 0);
-  $('detail-battery').textContent = formatReading(d.battery_voltage, 'V', 2);
+  const battery = [d.battery_voltage === null ? null : `${formatNumber(d.battery_voltage, 2)}\u00a0V`, d.battery_pct === null || d.battery_pct === undefined ? null : `${d.battery_pct}\u00a0%`].filter(Boolean);
+  $('detail-battery').textContent = battery.length ? battery.join(' · ') : '—';
+  $('detail-crowd-label').textContent = d.crowd_source === 'networks' ? 'Wi-Fi networks' : 'Phones nearby';
+  $('detail-crowd').textContent = formatNumber(d.crowd_count);
+  $('detail-signal').textContent = formatReading(d.rssi, 'dBm');
   $('detail-source').textContent = d.source === 'simulated' ? 'Simulated reading · illustrative location' : d.source === 'physical' ? 'Physical sensor · prototype measurement' : 'Sensor source unspecified';
   $('detail-time').textContent = relativeTime(d.last_updated);
 }

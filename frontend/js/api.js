@@ -41,6 +41,11 @@ export function normalizeDevices(rawDevices) {
       temperature: validNumber(raw.temperature, -60, 80),
       humidity: validNumber(raw.humidity, 0, 100),
       battery_voltage: validNumber(raw.battery_voltage, 0, 24),
+      // Optional extras from the backend (null in demo mode).
+      battery_pct: validNumber(raw.battery_estimate_pct, 0, 100),
+      crowd_count: validNumber(raw.crowd_count, 0, 65535),
+      crowd_source: raw.crowd_source === 'networks' ? 'networks' : 'phones',
+      rssi: validNumber(raw.rssi, -200, 0),
       source: raw.source === 'simulated' ? 'simulated' : raw.source === 'physical' ? 'physical' : 'unknown',
       status: raw.status === 'offline' ? 'offline' : 'online',
       last_updated: Number.isFinite(dateMs) ? new Date(dateMs).toISOString() : null,
