@@ -117,7 +117,10 @@
           <section class="locations-panel" aria-labelledby="location-list-title">
             <div class="panel-title-row list-heading">
               <div><h3 id="location-list-title">Explore locations</h3><p id="list-count">Loading locations…</p></div>
-              <label class="switch-label"><input id="below-only" type="checkbox"><span>Below my limit only</span></label>
+              <div class="list-filters">
+                <label class="switch-label"><input id="below-only" type="checkbox"><span>Below my limit only</span></label>
+                <label class="switch-label"><input id="real-only" type="checkbox"><span>Hide simulated nodes</span></label>
+              </div>
             </div>
             <div id="location-list" class="location-list" aria-label="Monitoring point list"></div>
             <p id="list-empty" class="empty-state" hidden>No locations meet this filter. Change your comfort limit or show all locations.</p>
