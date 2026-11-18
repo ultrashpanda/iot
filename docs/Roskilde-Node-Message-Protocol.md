@@ -91,6 +91,7 @@ All on **port 1**. LoRaWAN Class A: TTN holds the command and sends it right aft
 | Blink | `03` | LED on 200 ms, off 200 ms, on 200 ms, then sleep | — |
 | Sleep | `04 [hh ll [cc]]` | Stop measuring for hhll minutes (0 or omitted = until woken), check in every cc minutes | hhll 0–65,535 · cc 5–255, default 30 |
 | Wake | `05` | Resume measuring right after the check-in that received it | — |
+| Reboot | `06` | Restart through the watchdog right after the uplink that received it. Firmware v0.8+. | — |
 
 Examples:
 - `01 05` → measure every 5 min
@@ -168,3 +169,4 @@ Setup (once per person):
 | 2026-11-12 | Port 1 (8 bytes), port 2, downlinks 0x01–0x03 | |
 | 2026-11-12 | Blink changed to 2 × 200 ms | |
 | 2026-11-12 | Sleep (0x04), wake (0x05), port 3 check-in; interval range 1–240 min | |
+| 2026-11-18 | Reboot (0x06), firmware v0.8 | |

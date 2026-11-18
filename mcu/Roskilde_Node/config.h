@@ -10,7 +10,7 @@
 #define WDT_TEST       0   // 1 = hang on purpose after the first cycle: the node must reboot with "Reset cause: WATCHDOG"
 
 #define FW_MAJOR 0
-#define FW_MINOR 6
+#define FW_MINOR 8   // v0.7 shipped with 6 here by mistake
 
 // ------------------------------------------------------------------ LoRa data rate (v0.5)
 // EU868 data rate for joining and uplinks (ADR off). Airtime for the 11-byte port 1 message:
