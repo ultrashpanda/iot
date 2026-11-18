@@ -20,3 +20,9 @@ Word documents (project plan, reports) live in the team's Teams folder, not here
 | `Roskilde-Node-Message-Protocol.md` | Every byte of every uplink and downlink (source of truth) |
 
 The docs mention `Roskilde-Node-Hardware-Map.pdf`: the same content is in `Roskilde-Node-Hardware-Map.html` here. The PDF stays in Teams.
+
+## Working notes
+
+| File | For |
+|---|---|
+| `Working-Notes-2026-11-18.md` | State on 18 Nov, open to-dos, keys (no secrets), TTN limits, lessons learned |
