@@ -4,13 +4,14 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use axum::extract::State;
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use chrono::Utc;
 use serde_json::{json, Value};
 use tower_http::services::ServeDir;
+use tower_http::set_header::SetResponseHeaderLayer;
 
 use crate::store::{iso, Store};
 
@@ -22,6 +23,8 @@ pub fn router(store: Shared, frontend: PathBuf) -> Router {
         .route("/api/devices", get(devices))
         .route("/js/config.js", get(move || frontend_config(config_js.clone())))
         .fallback_service(ServeDir::new(frontend))
+        // Always revalidate, so the browser never mixes a new index.html with an old app.js.
+        .layer(SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, HeaderValue::from_static("no-cache")))
         .with_state(store)
 }
 

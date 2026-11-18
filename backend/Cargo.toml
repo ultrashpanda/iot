@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 axum = "0.7"
-tower-http = { version = "0.5", features = ["fs"] }
+tower-http = { version = "0.5", features = ["fs", "set-header"] }
 rumqttc = "0.24"            # default features include rustls for the TLS connection to TTN
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
