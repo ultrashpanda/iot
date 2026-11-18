@@ -24,8 +24,13 @@
 #define USE_WATCHDOG        1      // 8 s hardware watchdog while awake: a hang resets the node
 #define JITTER_S            15     // +- random seconds on every interval, so nodes don't stay in sync
 #define BOOT_JITTER_S       20     // random 0..20 s wait before the first join
-#define LINK_CHECK_EVERY_MIN 360   // every 6 h one uplink is sent confirmed (uses 1 TTN downlink)
+#define LINK_CHECK_EVERY_MIN 480   // v0.7: every 8 h one uplink is sent confirmed (uses 1 TTN downlink)
 #define LINK_MISSES_REJOIN  2      // rejoin after this many link checks without an ack
+
+// ------------------------------------------------------------------ once-per-boot messages (v0.7)
+#define BOOT_SEND_TRIES     3      // port 2 / port 4 sent confirmed: max attempts, 60 s apart
+#define BOOT_HEALTHY_MIN    60     // a boot must run this many minutes before the next boot sends port 2/4
+                                   // confirmed again (boot-loop protection, TTN fair use: 10 downlinks/day)
 #define MIC_DC_MIN          412    // mic resting level must be within 512 +- 100 counts,
 #define MIC_DC_MAX          612    // otherwise flag bit 6 (mic fault)
 
