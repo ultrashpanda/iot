@@ -1,8 +1,8 @@
 import { CONFIG } from './config.js';
-import { fetchDevices, normalizeDevices, conditionFor, setUplinkInterval, restartNode } from './api.js';
+import { fetchDevices, normalizeDevices, conditionFor, setUplinkInterval, restartNode, sleepNode, wakeNode } from './api.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { allDevices: [], devices: [], threshold: initialThreshold(), belowOnly: false, realOnly: initialRealOnly(), selectedId: null, map: null, markers: new Map(), refreshing: false, intervalFor: null, intervalMessage: null, rebootArmedFor: null, rebootMessage: null };
+const state = { allDevices: [], devices: [], threshold: initialThreshold(), belowOnly: false, realOnly: initialRealOnly(), selectedId: null, map: null, markers: new Map(), refreshing: false, intervalFor: null, intervalMessage: null, rebootArmedFor: null, rebootMessage: null, sleepMessage: null };
 
 function initialThreshold() {
   try {
@@ -23,7 +23,10 @@ function relativeTime(iso) {
   const mins = Math.floor(secs / 60);
   return mins < 60 ? `Updated ${mins} min ago` : `Updated ${Math.floor(mins / 60)} h ago`;
 }
-function statusLabel(condition) { return condition === 'under' ? 'At/below limit' : condition === 'over' ? 'Above limit' : 'Unavailable'; }
+function statusLabel(condition, device) {
+  if (device?.status === 'sleeping') return 'Sleeping';
+  return condition === 'under' ? 'At/below limit' : condition === 'over' ? 'Above limit' : 'Unavailable';
+}
 function getSelected() { return state.devices.find((dev) => dev.id === state.selectedId) ?? null; }
 
 function setConnection(status) {
@@ -74,7 +77,7 @@ function renderMap() {
     const icon = markerIcon(device, condition, device.id === state.selectedId, dimmed);
     let marker = state.markers.get(device.id);
     if (!marker) {
-      marker = L.marker([device.latitude, device.longitude], { icon, keyboard: true, title: `${device.name}: ${statusLabel(condition)}` });
+      marker = L.marker([device.latitude, device.longitude], { icon, keyboard: true, title: `${device.name}: ${statusLabel(condition, device)}` });
       marker.on('click', () => selectDevice(device.id, false));
       marker.addTo(state.map);
       state.markers.set(device.id, marker);
@@ -84,7 +87,7 @@ function renderMap() {
     }
     marker.setZIndexOffset(device.id === state.selectedId ? 900 : 0);
     const el = marker.getElement();
-    if (el) el.setAttribute('aria-label', `${device.name}: ${formatReading(device.noise_avg, 'dB')}. ${statusLabel(condition)}`);
+    if (el) el.setAttribute('aria-label', `${device.name}: ${formatReading(device.noise_avg, 'dB')}. ${statusLabel(condition, device)}`);
   }
 }
 
@@ -112,7 +115,7 @@ function makeLocationButton(device) {
   marker.setAttribute('aria-hidden', 'true');
   const texts = document.createElement('span'); texts.className = 'location-text';
   const name = document.createElement('strong'); name.textContent = device.name;
-  const detail = document.createElement('small'); detail.textContent = `${statusLabel(condition)} · ${device.source === 'simulated' ? 'Simulated' : device.source === 'physical' ? 'Physical node' : 'Source unknown'}`;
+  const detail = document.createElement('small'); detail.textContent = `${statusLabel(condition, device)} · ${device.source === 'simulated' ? 'Simulated' : device.source === 'physical' ? 'Physical node' : 'Source unknown'}`;
   texts.append(name, detail); left.append(marker, texts);
   const reading = document.createElement('span'); reading.className = 'location-value';
   reading.textContent = condition === 'unavailable' ? '—' : formatNumber(device.noise_avg);
@@ -154,7 +157,7 @@ function renderDetail() {
   const condition = conditionFor(d, state.threshold);
   $('detail-title').textContent = d.name;
   $('detail-status').className = `detail-status detail-status--${condition}`;
-  $('detail-status').textContent = statusLabel(condition);
+  $('detail-status').textContent = statusLabel(condition, d);
   $('detail-avg').textContent = formatReading(d.noise_avg, 'dB');
   $('detail-peak').textContent = formatReading(d.noise_peak, 'dB');
   $('detail-temp').textContent = formatReading(d.temperature, '°C', 1);
@@ -187,10 +190,59 @@ function renderIntervalControl(d) {
     $('interval-select').value = String(d.pending_interval_min ?? d.interval_min);
   }
   renderRebootControl(d);
+  renderSleepControl(d);
   if (state.intervalMessage) return;
   $('interval-status').textContent = d.pending_interval_min !== null
     ? `Now ${d.interval_min} min · ${d.pending_interval_min} min pending, applies after the next uplink`
     : `Now ${d.interval_min} min`;
+}
+
+const minutesText = (m) => (m >= 60 && m % 60 === 0 ? `${m / 60} h` : `${m} min`);
+
+function renderSleepControl(d) {
+  const asleep = d.status === 'sleeping';
+  const sleepQueued = d.pending_sleep_min !== null;
+  $('sleep-button').textContent = sleepQueued || asleep ? 'Change sleep' : 'Sleep';
+  $('sleep-button').disabled = d.pending_wake;
+  $('wake-button').hidden = !(asleep || sleepQueued);
+  $('wake-button').textContent = asleep ? 'Wake' : 'Cancel sleep';
+  $('wake-button').disabled = d.pending_wake;
+  if (state.sleepMessage) return;
+  const queued = sleepQueued
+    ? `Sleep ${d.pending_sleep_min === 0 ? 'until woken' : minutesText(d.pending_sleep_min)} queued (check-in every ${minutesText(d.pending_sleep_checkin_min ?? 30)}), starts after the next uplink`
+    : '';
+  $('sleep-status').textContent = d.pending_wake ? 'Wake queued, applies after the next check-in'
+    : asleep ? `Asleep ${d.sleep_minutes_left === null ? 'until woken' : `· ${minutesText(d.sleep_minutes_left)} left`} · check-in every ${minutesText(d.checkin_min ?? 30)}${queued ? ` · ${queued}` : ''}`
+    : queued;
+}
+
+/** Sends a node command, then refreshes; shows the backend's error next to the control for 8 s. */
+async function runCommand(button, statusId, messageKey, send) {
+  button.disabled = true;
+  try {
+    await send();
+    state[messageKey] = null;
+    await refresh();
+  } catch (err) {
+    state[messageKey] = `Could not send: ${err.message}`;
+    $(statusId).textContent = state[messageKey];
+    setTimeout(() => { state[messageKey] = null; renderDetail(); }, 8000);
+  } finally {
+    renderDetail();
+  }
+}
+
+function onSleepClick() {
+  const d = getSelected();
+  if (!d) return;
+  runCommand($('sleep-button'), 'sleep-status', 'sleepMessage',
+    () => sleepNode(d.id, Number($('sleep-duration').value), Number($('sleep-checkin').value)));
+}
+
+function onWakeClick() {
+  const d = getSelected();
+  if (!d) return;
+  runCommand($('wake-button'), 'sleep-status', 'sleepMessage', () => wakeNode(d.id));
 }
 
 function renderRebootControl(d) {
@@ -308,6 +360,8 @@ function init() {
   });
   $('interval-apply').addEventListener('click', applyInterval);
   $('reboot-button').addEventListener('click', onRebootClick);
+  $('sleep-button').addEventListener('click', onSleepClick);
+  $('wake-button').addEventListener('click', onWakeClick);
   $('refresh-button').addEventListener('click', refresh);
   initMap();
   setConnection('loading');

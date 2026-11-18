@@ -137,6 +137,20 @@
           <span class="control-spacer" aria-hidden="true"></span>
           <button type="button" class="text-button" id="reboot-button">Restart node</button>
           <span id="reboot-status" class="interval-status" role="status" aria-live="polite"></span>
+          <span class="control-break" aria-hidden="true"></span>
+          <label for="sleep-duration">Sleep</label>
+          <select id="sleep-duration">
+            <option value="0">Until woken</option><option value="30">30 min</option><option value="60">1 h</option>
+            <option value="120">2 h</option><option value="240">4 h</option><option value="480">8 h</option><option value="720">12 h</option>
+          </select>
+          <label for="sleep-checkin" class="sub-label">check in every</label>
+          <select id="sleep-checkin">
+            <option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option>
+            <option value="30" selected>30 min</option><option value="60">60 min</option><option value="120">120 min</option>
+          </select>
+          <button type="button" class="text-button" id="sleep-button">Sleep</button>
+          <button type="button" class="text-button" id="wake-button" hidden>Wake</button>
+          <span id="sleep-status" class="interval-status" role="status" aria-live="polite"></span>
         </div>
         <div class="detail-foot"><span id="detail-source">Select a sensor on the map or in the list.</span><span id="detail-time"></span></div>
       </section>

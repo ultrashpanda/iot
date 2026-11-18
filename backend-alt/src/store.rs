@@ -55,6 +55,8 @@ pub struct Device {
     /// Commands queued at TTN, front = delivered with the next uplink (class A, one per uplink).
     pending: Vec<Command>,
     checkin_min: u32,
+    /// From the last uplink if it was a port 3 check-in: Some(None) = asleep until woken.
+    last_checkin: Option<Option<u16>>,
     last_seen: Option<DateTime<Utc>>,
     last_port: Option<u8>,
     last: Option<Measurement>,
@@ -71,19 +73,51 @@ pub struct Device {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Command {
     Interval(u8),
+    /// minutes 0 = until woken; check-in 5..=255 min (port 3 while asleep)
+    Sleep { minutes: u16, checkin_min: u8 },
+    Wake,
     Reboot,
 }
 
 impl Command {
     pub fn downlink(self) -> Downlink {
-        match self { Command::Interval(minutes) => Downlink::Interval { minutes }, Command::Reboot => Downlink::Reboot }
+        match self {
+            Command::Interval(minutes) => Downlink::Interval { minutes },
+            Command::Sleep { minutes, checkin_min } => {
+                Downlink::Sleep { minutes: (minutes != 0).then_some(minutes), checkin_min: Some(checkin_min) }
+            }
+            Command::Wake => Downlink::Wake,
+            Command::Reboot => Downlink::Reboot,
+        }
+    }
+    /// Inverse of downlink().encode(), for commands read back from the database.
+    fn from_bytes(b: &[u8]) -> Option<Command> {
+        match *b {
+            [0x01, m] => Some(Command::Interval(m)),
+            [0x04] => Some(Command::Sleep { minutes: 0, checkin_min: 30 }),
+            [0x04, h, l] => Some(Command::Sleep { minutes: u16::from_be_bytes([h, l]), checkin_min: 30 }),
+            [0x04, h, l, c] => Some(Command::Sleep { minutes: u16::from_be_bytes([h, l]), checkin_min: c }),
+            [0x05] => Some(Command::Wake),
+            [0x06] => Some(Command::Reboot),
+            _ => None,
+        }
     }
     fn kind(self) -> &'static str {
-        match self { Command::Interval(_) => "interval", Command::Reboot => "reboot" }
+        match self {
+            Command::Interval(_) => "interval",
+            Command::Sleep { .. } => "sleep",
+            Command::Wake => "wake",
+            Command::Reboot => "reboot",
+        }
     }
     fn value(self) -> Option<i64> {
-        match self { Command::Interval(m) => Some(m as i64), Command::Reboot => None }
+        match self {
+            Command::Interval(m) => Some(m as i64),
+            Command::Sleep { minutes, .. } => Some(minutes as i64),
+            Command::Wake | Command::Reboot => None,
+        }
     }
+    fn is_sleep_or_wake(&self) -> bool { matches!(self, Command::Sleep { .. } | Command::Wake) }
 }
 
 /// Firmware that understands the reboot downlink (06).
@@ -115,6 +149,11 @@ pub struct DeviceJson {
     interval_min: Option<u32>,         // physical nodes only
     pending_interval_min: Option<u32>, // sent, not yet delivered
     pending_reboot: bool,
+    checkin_min: Option<u32>,               // physical nodes only
+    sleep_minutes_left: Option<u16>,        // from the last check-in, None = until woken or awake
+    pending_sleep_min: Option<u16>,         // queued sleep, 0 = until woken
+    pending_sleep_checkin_min: Option<u8>,
+    pending_wake: bool,
     reboot_supported: Option<bool>,    // None = firmware version not known yet
     last_seen: Option<String>,
     powered_up_at: Option<String>,
@@ -210,23 +249,18 @@ impl Store {
         // Downlinks: a 'sent' interval is the node's current interval, 'pending' ones are still queued at TTN.
         let downlinks = {
             let mut stmt = store.db.prepare(
-                "SELECT dev_id, kind, value, state FROM downlinks WHERE state IN ('sent', 'pending') ORDER BY id",
+                "SELECT dev_id, bytes, state FROM downlinks WHERE state IN ('sent', 'pending') ORDER BY id",
             )?;
-            let rows = stmt.query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<i64>>(2)?, r.get::<_, String>(3)?))
-            })?;
-            let downlinks: Vec<(String, String, Option<i64>, String)> = rows.collect::<rusqlite::Result<_>>()?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?, r.get::<_, String>(2)?)))?;
+            let downlinks: Vec<(String, Vec<u8>, String)> = rows.collect::<rusqlite::Result<_>>()?;
             downlinks
         };
-        for (dev_id, kind, value, state) in downlinks {
-            let cmd = match (kind.as_str(), value) {
-                ("interval", Some(m)) => Command::Interval(m as u8),
-                ("reboot", _) => Command::Reboot,
-                _ => continue,
-            };
+        for (dev_id, bytes, state) in downlinks {
+            let Some(cmd) = Command::from_bytes(&bytes) else { continue };
             if let Some(d) = store.devices.get_mut(&dev_id) {
                 match (state.as_str(), cmd) {
                     ("sent", Command::Interval(m)) => d.interval_min = m as u32,
+                    ("sent", Command::Sleep { checkin_min, .. }) => d.checkin_min = checkin_min as u32,
                     ("pending", _) => d.pending.push(cmd),
                     _ => {}
                 }
@@ -370,11 +404,18 @@ impl Store {
                     dev.interval_min = m as u32;
                     println!("{} [downlink] {}: interval {m} min delivered with this uplink", crate::source::hms(), raw.dev_id);
                 }
+                Command::Sleep { minutes, checkin_min } => {
+                    dev.checkin_min = checkin_min as u32;
+                    let how_long = if minutes == 0 { "until woken".to_string() } else { format!("for {minutes} min") };
+                    println!("{} [downlink] {}: sleep {how_long} delivered, check-in every {checkin_min} min", crate::source::hms(), raw.dev_id);
+                }
+                Command::Wake => println!("{} [downlink] {}: wake delivered with this check-in", crate::source::hms(), raw.dev_id),
                 Command::Reboot => println!("{} [downlink] {}: restart delivered with this uplink, node reboots now", crate::source::hms(), raw.dev_id),
             }
         }
         dev.last_seen = Some(raw.received_at);
         dev.last_port = Some(raw.port);
+        dev.last_checkin = None; // set again below if this is a check-in
         dev.rssi = raw.rssi;
         dev.snr = raw.snr;
         match &decoded {
@@ -387,7 +428,8 @@ impl Store {
                 dev.last = Some(m.clone());
             }
             Ok(Uplink::Geolocation(_)) => dev.powered_up_at = Some(raw.received_at),
-            Ok(Uplink::SleepCheckIn { battery_pct, .. }) => {
+            Ok(Uplink::SleepCheckIn { battery_pct, minutes_left }) => {
+                dev.last_checkin = Some(*minutes_left);
                 if battery_pct.is_some() {
                     dev.battery_pct = *battery_pct;
                 }
@@ -420,6 +462,7 @@ impl Store {
                 interval_min: cfg.and_then(|c| c.interval_min).unwrap_or(default_interval),
                 pending: Vec::new(),
                 checkin_min: 30,
+                last_checkin: None,
                 last_seen: None,
                 last_port: None,
                 last: None,
@@ -445,6 +488,25 @@ impl Store {
                 queue.retain(|c| !matches!(c, Command::Interval(_)));
                 let at = queue.iter().position(|c| *c == Command::Reboot).unwrap_or(queue.len());
                 queue.insert(at, cmd);
+            }
+            Command::Sleep { checkin_min, .. } => {
+                if checkin_min < 5 {
+                    return Err("check-in must be 5 to 255 min".into());
+                }
+                queue.retain(|c| !c.is_sleep_or_wake());
+                let at = queue.iter().position(|c| *c == Command::Reboot).unwrap_or(queue.len());
+                queue.insert(at, cmd);
+            }
+            Command::Wake => {
+                let sleep_queued = queue.iter().any(|c| matches!(c, Command::Sleep { .. }));
+                let asleep = d.last_port == Some(3);
+                queue.retain(|c| !c.is_sleep_or_wake());
+                if asleep {
+                    let at = queue.iter().position(|c| *c == Command::Reboot).unwrap_or(queue.len());
+                    queue.insert(at, cmd);
+                } else if !sleep_queued {
+                    return Err(format!("{id} is not asleep"));
+                } // else: the queued sleep is simply cancelled
             }
             Command::Reboot => {
                 if let Some(fw) = d.firmware.filter(|fw| *fw < REBOOT_FIRMWARE) {
@@ -512,6 +574,11 @@ impl Store {
                 interval_min: (d.source == Source::Physical).then_some(d.interval_min),
                 pending_interval_min: d.pending.iter().rev().find_map(|c| match c { Command::Interval(m) => Some(*m as u32), _ => None }),
                 pending_reboot: d.pending.contains(&Command::Reboot),
+                checkin_min: (d.source == Source::Physical).then_some(d.checkin_min),
+                sleep_minutes_left: d.last_checkin.flatten(),
+                pending_sleep_min: d.pending.iter().find_map(|c| match c { Command::Sleep { minutes, .. } => Some(*minutes), _ => None }),
+                pending_sleep_checkin_min: d.pending.iter().find_map(|c| match c { Command::Sleep { checkin_min, .. } => Some(*checkin_min), _ => None }),
+                pending_wake: d.pending.contains(&Command::Wake),
                 reboot_supported: (d.source == Source::Physical).then_some(d.firmware.map(|fw| fw >= REBOOT_FIRMWARE)).flatten(),
                 powered_up_at: d.powered_up_at.map(iso),
                 firmware: d.firmware.map(|(major, minor)| format!("{major}.{minor}")),
