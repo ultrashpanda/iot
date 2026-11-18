@@ -2,6 +2,7 @@
 // Model and rules: docs/SoundScape-Messages-Team2-Backend.md.
 
 mod api;
+mod geo;
 mod simulator;
 mod source;
 mod store;
@@ -77,10 +78,32 @@ async fn main() {
     }
     drop(tx);
 
+    let geolocator = var("GOOGLE_API_KEY").map(geo::Geolocator::new);
+    if geolocator.is_none() {
+        println!("[geo] GOOGLE_API_KEY not set: Wi-Fi geolocation disabled, positions come from devices.json");
+    }
+
     let ingest = shared.clone();
     tokio::spawn(async move {
         while let Some(up) = rx.recv().await {
-            ingest.lock().unwrap().ingest(up);
+            let request = ingest.lock().unwrap().ingest(up);
+            let (Some(req), Some(geolocator)) = (request, geolocator.clone()) else { continue };
+            // Ask Google in the background, so uplinks keep flowing while it answers.
+            let store = ingest.clone();
+            tokio::spawn(async move {
+                let (fix, error) = if req.aps.len() < geo::MIN_APS {
+                    (None, Some(format!("only {} routers, need {}", req.aps.len(), geo::MIN_APS)))
+                } else {
+                    match geolocator.locate(&req.aps).await {
+                        Ok(fix) => (Some(fix), None),
+                        Err(e) => {
+                            eprintln!("[geo] {}: {e}", req.dev_id);
+                            (None, Some(e))
+                        }
+                    }
+                };
+                store.lock().unwrap().apply_geolocation(&req, fix, error);
+            });
         }
     });
 

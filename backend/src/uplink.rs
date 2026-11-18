@@ -45,7 +45,7 @@ pub struct Battery {
     pub load_v: f32, // lowest while the ESP-01 runs
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Ap { pub bssid: [u8; 6], pub rssi_dbm: i16 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]

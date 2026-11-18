@@ -11,7 +11,8 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
 use crate::source::{RawUplink, Source};
-use crate::uplink::{self, CrowdSource, DecodeError, Measurement, Uplink};
+use crate::geo::{self, Fix};
+use crate::uplink::{self, Ap, CrowdSource, DecodeError, Measurement, Uplink};
 
 /// Map centre used for devices without a configured position (same as frontend/js/config.js).
 const CENTER: (f64, f64) = (55.607, 12.071);
@@ -48,6 +49,8 @@ pub struct Device {
     lon: f64,
     source: Source,
     might_have_moved: bool,
+    position_source: &'static str, // "installation" (devices.json), "wifi" (Google), "placeholder"
+    position_accuracy_m: Option<f64>,
     interval_min: u32,
     /// Interval sent by downlink, applied when the node's next uplink arrives (class A).
     pending_interval_min: Option<u32>,
@@ -85,6 +88,8 @@ pub struct DeviceJson {
     source: &'static str,
     last_updated: Option<String>,
     // Extras, not in the Team 3 contract yet:
+    position_source: &'static str,
+    position_accuracy_m: Option<f64>,
     interval_min: Option<u32>,         // physical nodes only
     pending_interval_min: Option<u32>, // sent, not yet delivered
     last_seen: Option<String>,
@@ -102,6 +107,28 @@ fn spiral(n: usize) -> (f64, f64) {
     let r = 0.0012 * ((n + 1) as f64).sqrt();
     let lon_scale = CENTER.0.to_radians().cos();
     (CENTER.0 + r * angle.cos(), CENTER.1 + r * angle.sin() / lon_scale)
+}
+
+pub struct GeoRequest {
+    pub dev_id: String,
+    pub received_at: DateTime<Utc>,
+    pub aps: Vec<Ap>,
+}
+
+/// Team 2 position rules, plus: fixes worse than MAX_ACCURACY_M are ignored, and a node with only a
+/// placeholder position takes its first good fix without a "moved" warning.
+fn apply_position(d: &mut Device, n_aps: usize, fix: Option<Fix>) {
+    match fix {
+        Some(f) if n_aps >= geo::MIN_APS && f.accuracy_m <= geo::MAX_ACCURACY_M => {
+            let moved = d.position_source != "placeholder" && geo::distance_m((d.lat, d.lon), (f.lat, f.lon)) > geo::MOVED_M;
+            d.lat = f.lat;
+            d.lon = f.lon;
+            d.might_have_moved = moved;
+            d.position_source = "wifi";
+            d.position_accuracy_m = Some(f.accuracy_m);
+        }
+        _ => d.might_have_moved = true,
+    }
 }
 
 pub struct Store {
@@ -126,7 +153,10 @@ impl Store {
                 battery_pct INTEGER, battery_rest_v REAL, battery_load_v REAL, rssi INTEGER, snr REAL);
              CREATE TABLE IF NOT EXISTS downlinks (
                 id INTEGER PRIMARY KEY, dev_id TEXT NOT NULL, created_at TEXT NOT NULL, port INTEGER NOT NULL,
-                bytes BLOB NOT NULL, kind TEXT NOT NULL, value INTEGER, state TEXT NOT NULL);",
+                bytes BLOB NOT NULL, kind TEXT NOT NULL, value INTEGER, state TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS ap_scans (
+                dev_id TEXT NOT NULL, received_at TEXT NOT NULL, n_aps INTEGER NOT NULL, aps_json TEXT NOT NULL,
+                lat REAL, lon REAL, accuracy_m REAL, error TEXT);",
         )?;
 
         let history = {
@@ -167,6 +197,26 @@ impl Store {
                 if state == "sent" { d.interval_min = minutes as u32 } else { d.pending_interval_min = Some(minutes as u32) }
             }
         }
+        // Wi-Fi geolocation results, in order, so the position rules end in the same state (no Google calls).
+        let scans = {
+            let mut stmt = store.db.prepare(
+                "SELECT dev_id, n_aps, lat, lon, accuracy_m FROM ap_scans ORDER BY received_at",
+            )?;
+            let rows = stmt.query_map([], |r| {
+                let fix = match (r.get::<_, Option<f64>>(2)?, r.get::<_, Option<f64>>(3)?, r.get::<_, Option<f64>>(4)?) {
+                    (Some(lat), Some(lon), Some(accuracy_m)) => Some(Fix { lat, lon, accuracy_m }),
+                    _ => None,
+                };
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as usize, fix))
+            })?;
+            let scans: Vec<(String, usize, Option<Fix>)> = rows.collect::<rusqlite::Result<_>>()?;
+            scans
+        };
+        for (dev_id, n_aps, fix) in &scans {
+            if let Some(d) = store.devices.get_mut(dev_id) {
+                apply_position(d, *n_aps, *fix);
+            }
+        }
         // Configured nodes show up on the map (as offline) before their first uplink.
         let configured: Vec<String> = store.config.keys().cloned().collect();
         for id in configured {
@@ -176,8 +226,9 @@ impl Store {
         Ok(store)
     }
 
-    /// Entry point for every uplink, real or simulated.
-    pub fn ingest(&mut self, raw: RawUplink) {
+    /// Entry point for every uplink, real or simulated. Returns a geolocation request for a fresh
+    /// port 2 uplink from a real node (the caller asks Google, then calls apply_geolocation).
+    pub fn ingest(&mut self, raw: RawUplink) -> Option<GeoRequest> {
         let physical = raw.source == Source::Physical;
         if physical {
             let error = uplink::decode(raw.port, &raw.payload).err().map(|e| e.to_string());
@@ -188,7 +239,7 @@ impl Store {
                         raw.rssi.map(|v| v as i64), raw.snr.map(|v| v as f64), error],
             );
             match inserted {
-                Ok(0) => return, // duplicate (dev_id, f_cnt, received_at)
+                Ok(0) => return None, // duplicate (dev_id, f_cnt, received_at)
                 Ok(_) => {
                     // TTN delivers a queued downlink right after this uplink.
                     if let Err(e) = self.db.execute(
@@ -204,7 +255,7 @@ impl Store {
 
         let decoded = self.apply(&raw);
         if !physical {
-            return;
+            return None;
         }
         let hex: Vec<String> = raw.payload.iter().map(|b| format!("{b:02X}")).collect();
         match &decoded {
@@ -218,6 +269,37 @@ impl Store {
             }
             Ok(other) => println!("[uplink] {} port {} #{}: {:?}", raw.dev_id, raw.port, raw.f_cnt, other),
             Err(e) => eprintln!("[uplink] {} port {} #{}: {e}. Raw bytes kept: {}", raw.dev_id, raw.port, raw.f_cnt, hex.join(" ")),
+        }
+        match decoded {
+            Ok(Uplink::Geolocation(aps)) => Some(GeoRequest { dev_id: raw.dev_id, received_at: raw.received_at, aps }),
+            _ => None,
+        }
+    }
+
+    /// Stores the outcome of one Wi-Fi scan and applies the position rules. `fix` is None when there
+    /// were too few routers or Google could not locate them.
+    pub fn apply_geolocation(&mut self, req: &GeoRequest, fix: Option<Fix>, error: Option<String>) {
+        let aps_json = serde_json::to_string(
+            &req.aps.iter().map(|a| serde_json::json!({ "mac": geo::mac(&a.bssid), "rssi": a.rssi_dbm })).collect::<Vec<_>>(),
+        ).unwrap_or_default();
+        let result = self.db.execute(
+            "INSERT INTO ap_scans (dev_id, received_at, n_aps, aps_json, lat, lon, accuracy_m, error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![req.dev_id, iso(req.received_at), req.aps.len() as i64, aps_json,
+                    fix.map(|f| f.lat), fix.map(|f| f.lon), fix.map(|f| f.accuracy_m), error],
+        );
+        if let Err(e) = result {
+            eprintln!("[db] could not store Wi-Fi scan from {}: {e}", req.dev_id);
+        }
+        if let Some(d) = self.devices.get_mut(&req.dev_id) {
+            apply_position(d, req.aps.len(), fix);
+            println!(
+                "[geo] {}: {} routers → {} ({:.5}, {:.5}){}",
+                req.dev_id, req.aps.len(),
+                match fix { Some(f) => format!("fix ±{:.0} m", f.accuracy_m), None => "no fix".into() },
+                d.lat, d.lon,
+                if d.might_have_moved { ", might have moved" } else { "" }
+            );
         }
     }
 
@@ -292,6 +374,8 @@ impl Store {
                 source,
                 // Without a configured position we can't know where a real node is.
                 might_have_moved: cfg.is_none() && source == Source::Physical,
+                position_source: if cfg.is_some() { "installation" } else { "placeholder" },
+                position_accuracy_m: None,
                 interval_min: cfg.and_then(|c| c.interval_min).unwrap_or(default_interval),
                 pending_interval_min: None,
                 checkin_min: 30,
@@ -356,6 +440,8 @@ impl Store {
                 source: d.source.as_str(),
                 last_updated: d.measured_at.map(iso),
                 last_seen: d.last_seen.map(iso),
+                position_source: d.position_source,
+                position_accuracy_m: d.position_accuracy_m,
                 interval_min: (d.source == Source::Physical).then_some(d.interval_min),
                 pending_interval_min: d.pending_interval_min,
                 powered_up_at: d.powered_up_at.map(iso),

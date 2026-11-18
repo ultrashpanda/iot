@@ -166,9 +166,17 @@ function renderDetail() {
   $('detail-crowd-label').textContent = d.crowd_source === 'networks' ? 'Wi-Fi networks' : 'Phones nearby';
   $('detail-crowd').textContent = formatNumber(d.crowd_count);
   $('detail-signal').textContent = formatReading(d.rssi, 'dBm');
-  $('detail-source').textContent = d.source === 'simulated' ? 'Simulated reading · illustrative location' : d.source === 'physical' ? 'Physical sensor · prototype measurement' : 'Sensor source unspecified';
+  $('detail-source').textContent = d.source === 'simulated' ? 'Simulated reading · illustrative location' : d.source === 'physical' ? `Physical sensor · prototype measurement${positionNote(d)}` : 'Sensor source unspecified';
   $('detail-time').textContent = relativeTime(d.last_updated);
   renderIntervalControl(d);
+}
+
+/** Where a real node's marker comes from, when the backend says so. */
+function positionNote(d) {
+  const where = d.position_source === 'wifi' ? ` · position from Wi-Fi${d.position_accuracy_m === null ? '' : ` ±${Math.round(d.position_accuracy_m)} m`}`
+    : d.position_source === 'installation' ? ' · installation position'
+    : d.position_source === 'placeholder' ? ' · position not set (approximate marker)' : '';
+  return where + (d.might_have_moved && d.position_source !== 'placeholder' ? ' · might have moved' : '');
 }
 
 /** Only for real nodes on a backend that reports interval_min (sends a TTN downlink). */

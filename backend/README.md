@@ -36,6 +36,18 @@ ones update every 5 s. Set `SIMULATOR_DEVICES=0` in `.env` to see only real node
 When the backend serves the frontend, it switches `DATA_MODE` to `'api'` on the fly, so
 `frontend/js/config.js` does not need editing.
 
+## Node positions
+
+1. `devices.json`: installation position per node (phone GPS). This is the first position.
+2. Wi-Fi geolocation: at every power-up the node sends the routers it sees (port 2). With
+   `GOOGLE_API_KEY` in `.env`, the backend asks the Google Geolocation API and moves the marker.
+   Needs 3 or more routers and an accuracy of 250 m or better; a fix more than 100 m from the
+   previous position marks the node as "might have moved". Results are kept in `ap_scans`.
+3. Neither: the marker gets a placeholder spot near the map centre.
+
+The Google key must have the Geolocation API enabled and must **not** be restricted to websites
+(referrers), because the server calls Google directly.
+
 ## Change a node's uplink interval
 
 Select a real node on the map, pick an interval under the measurements and press **Apply**.
@@ -51,6 +63,7 @@ The TTN API key needs the right **Write downlink application traffic**. Mind TTN
 |---|---|
 | `src/uplink.rs` | Byte decoder (Team 2's reference, extended for firmware v0.3+: 11 byte port 1, battery, port 4) |
 | `src/ttn.rs` | TTN MQTT client, TTN JSON → `RawUplink` |
+| `src/geo.rs` | Google Geolocation API call, distance |
 | `src/simulator.rs` | Fake devices that send real encoded bytes |
 | `src/store.rs` | Device state, SQLite, online / sleeping / offline rules, API JSON |
 | `src/api.rs` | HTTP routes and static frontend |
@@ -68,4 +81,4 @@ Delete the file to start fresh.
 
 ## Not done yet
 
-Other downlinks (scan time, blink, sleep, wake), Google geolocation from port 2, Docker.
+Other downlinks (scan time, blink, sleep, wake), Docker.
