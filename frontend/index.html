@@ -126,6 +126,18 @@
           <div><span>Battery</span><strong id="detail-battery">—</strong></div>
           <div><span>Signal</span><strong id="detail-signal">—</strong></div>
         </div>
+        <div class="interval-control" id="interval-control" hidden>
+          <label for="interval-select">Uplink interval</label>
+          <select id="interval-select">
+            <option value="1">1 min (debug only)</option><option value="2">2 min (debug only)</option><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option>
+            <option value="30">30 min</option><option value="60">60 min</option><option value="120">120 min</option>
+          </select>
+          <button type="button" class="text-button" id="interval-apply">Apply</button>
+          <span id="interval-status" class="interval-status" role="status" aria-live="polite"></span>
+          <span class="control-spacer" aria-hidden="true"></span>
+          <button type="button" class="text-button" id="reboot-button">Restart node</button>
+          <span id="reboot-status" class="interval-status" role="status" aria-live="polite"></span>
+        </div>
         <div class="detail-foot"><span id="detail-source">Select a sensor on the map or in the list.</span><span id="detail-time"></span></div>
       </section>
     </section>

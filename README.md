@@ -25,30 +25,32 @@ flowchart LR
 |-------------|-----------------------------------------------|
 | `mcu/`      | Microcontroller firmware for the devices      |
 | `frontend/` | Browser map frontend                          |
-| `backend/`  | Decryption, decoding, REST API, SQLite, simulator |
+| `backend/`  | Backend team's code (decoding, REST API, SQLite, simulator) |
+| `backend-alt/` | Alternative backend MVP that works today (Rust) |
 | `docs/`     | Message formats and agreements between teams  |
 
 ## Try it without hardware
 
 ```bash
-git clone https://github.com/ultrashpanda/iot && cd iot
-docker compose up
+git clone https://github.com/ultrashpanda/iot && cd iot/backend-alt
+cargo run
 ```
 
-The simulator adds fake devices, so the map is live straight away.
+Then open http://localhost:8080. The simulator adds 20 fake devices, so the map is live straight away.
+For real nodes (TTN key, Google key, node positions), see [backend-alt/README.md](backend-alt/README.md).
 
 ## Status
 
-- [x] MCU firmware (v0.7)
-- [ ] Backend
-- [ ] Frontend
+- [x] MCU firmware (v0.8)
+- [ ] Backend (team code in `backend/`)
+- [x] Alternative backend (`backend-alt/`)
+- [x] Frontend
 
 ## Alternative backend
 
-A working backend MVP (TTN MQTT, simulator, SQLite, `GET /api/devices`, serves the frontend) lives on
-the branch [`feat/backend-mvp`](https://github.com/ultrashpanda/iot/tree/feat/backend-mvp/backend).
-It is kept unmerged on purpose, so `backend/` stays free for the backend team's own code.
-See [its README](https://github.com/ultrashpanda/iot/blob/feat/backend-mvp/backend/README.md) to run it.
+`backend-alt/` is a working backend MVP: TTN over MQTT, decoding, SQLite, Wi-Fi geolocation,
+downlinks (uplink interval, restart), the simulator and `GET /api/devices`. It also serves the
+frontend. It lives in its own folder, so `backend/` stays free for the backend team's own code.
 
 ## Team and license
 

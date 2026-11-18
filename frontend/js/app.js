@@ -1,8 +1,8 @@
 import { CONFIG } from './config.js';
-import { fetchDevices, normalizeDevices, conditionFor } from './api.js';
+import { fetchDevices, normalizeDevices, conditionFor, setUplinkInterval, restartNode } from './api.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { allDevices: [], devices: [], threshold: initialThreshold(), belowOnly: false, realOnly: initialRealOnly(), selectedId: null, map: null, markers: new Map(), refreshing: false };
+const state = { allDevices: [], devices: [], threshold: initialThreshold(), belowOnly: false, realOnly: initialRealOnly(), selectedId: null, map: null, markers: new Map(), refreshing: false, intervalFor: null, intervalMessage: null, rebootArmedFor: null, rebootMessage: null };
 
 function initialThreshold() {
   try {
@@ -148,6 +148,7 @@ function renderDetail() {
     for (const id of ['detail-avg', 'detail-peak', 'detail-crowd', 'detail-temp', 'detail-humidity', 'detail-battery', 'detail-signal']) $(id).textContent = '—';
     $('detail-source').textContent = 'Select a sensor on the map or in the list.';
     $('detail-time').textContent = '';
+    renderIntervalControl(null);
     return;
   }
   const condition = conditionFor(d, state.threshold);
@@ -163,8 +164,88 @@ function renderDetail() {
   $('detail-crowd-label').textContent = d.crowd_source === 'networks' ? 'Wi-Fi networks' : 'Phones nearby';
   $('detail-crowd').textContent = formatNumber(d.crowd_count);
   $('detail-signal').textContent = formatReading(d.rssi, 'dBm');
-  $('detail-source').textContent = d.source === 'simulated' ? 'Simulated reading · illustrative location' : d.source === 'physical' ? 'Physical sensor · prototype measurement' : 'Sensor source unspecified';
+  $('detail-source').textContent = d.source === 'simulated' ? 'Simulated reading · illustrative location' : d.source === 'physical' ? `Physical sensor · prototype measurement${positionNote(d)}` : 'Sensor source unspecified';
   $('detail-time').textContent = relativeTime(d.last_updated);
+  renderIntervalControl(d);
+}
+
+/** Where a real node's marker comes from, when the backend says so. */
+function positionNote(d) {
+  const where = d.position_source === 'wifi' ? ` · position from Wi-Fi${d.position_accuracy_m === null ? '' : ` ±${Math.round(d.position_accuracy_m)} m`}`
+    : d.position_source === 'installation' ? ' · installation position'
+    : d.position_source === 'placeholder' ? ' · position not set (approximate marker)' : '';
+  return where + (d.might_have_moved && d.position_source !== 'placeholder' ? ' · might have moved' : '');
+}
+
+/** Only for real nodes on a backend that reports interval_min (sends a TTN downlink). */
+function renderIntervalControl(d) {
+  const box = $('interval-control');
+  box.hidden = !d || d.source !== 'physical' || d.interval_min === null;
+  if (box.hidden) return;
+  if (state.intervalFor !== d.id) { // don't override the user's choice on every 5 s refresh
+    state.intervalFor = d.id;
+    $('interval-select').value = String(d.pending_interval_min ?? d.interval_min);
+  }
+  renderRebootControl(d);
+  if (state.intervalMessage) return;
+  $('interval-status').textContent = d.pending_interval_min !== null
+    ? `Now ${d.interval_min} min · ${d.pending_interval_min} min pending, applies after the next uplink`
+    : `Now ${d.interval_min} min`;
+}
+
+function renderRebootControl(d) {
+  const btn = $('reboot-button');
+  const armed = state.rebootArmedFor === d.id;
+  btn.classList.toggle('is-armed', armed);
+  btn.textContent = d.pending_reboot ? 'Restart queued' : armed ? 'Click again to restart' : 'Restart node';
+  btn.disabled = d.pending_reboot || d.reboot_supported === false;
+  if (state.rebootMessage) return;
+  $('reboot-status').textContent = d.pending_reboot ? 'Restarts after its next uplink'
+    : d.reboot_supported === false ? `Needs firmware v0.8 (node has ${d.firmware ?? '?'})`
+    : d.reboot_supported === null ? 'Firmware unknown: older firmware ignores it' : '';
+}
+
+/** Two clicks within 5 s, so a node is never restarted by accident. */
+async function onRebootClick() {
+  const d = getSelected();
+  if (!d) return;
+  if (state.rebootArmedFor !== d.id) {
+    state.rebootArmedFor = d.id;
+    renderDetail();
+    setTimeout(() => { if (state.rebootArmedFor === d.id) { state.rebootArmedFor = null; renderDetail(); } }, 5000);
+    return;
+  }
+  state.rebootArmedFor = null;
+  $('reboot-button').disabled = true;
+  try {
+    await restartNode(d.id);
+    state.rebootMessage = null;
+    await refresh();
+  } catch (err) {
+    state.rebootMessage = `Could not send: ${err.message}`;
+    $('reboot-status').textContent = state.rebootMessage;
+    setTimeout(() => { state.rebootMessage = null; renderDetail(); }, 8000);
+  } finally {
+    renderDetail();
+  }
+}
+
+async function applyInterval() {
+  const d = getSelected();
+  if (!d) return;
+  const minutes = Number($('interval-select').value);
+  $('interval-apply').disabled = true;
+  try {
+    await setUplinkInterval(d.id, minutes);
+    state.intervalMessage = null;
+    await refresh();
+  } catch (err) {
+    state.intervalMessage = `Could not send: ${err.message}`;
+    $('interval-status').textContent = state.intervalMessage;
+    setTimeout(() => { state.intervalMessage = null; renderDetail(); }, 8000);
+  } finally {
+    $('interval-apply').disabled = false;
+  }
 }
 function renderEverything() { renderThresholdWarning(); renderStats(); renderMap(); renderList(); renderDetail(); }
 function renderThresholdWarning() { $('threshold-warning').hidden = state.threshold <= 80; }
@@ -225,6 +306,8 @@ function init() {
     applySourceFilter();
     renderEverything();
   });
+  $('interval-apply').addEventListener('click', applyInterval);
+  $('reboot-button').addEventListener('click', onRebootClick);
   $('refresh-button').addEventListener('click', refresh);
   initMap();
   setConnection('loading');

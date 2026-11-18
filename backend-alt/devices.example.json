@@ -1,0 +1,5 @@
+{
+  "1-soundscape-device": { "name": "Node 1", "latitude": 55.6170, "longitude": 12.0790 },
+  "2-soundscape-device": { "name": "Node 2", "latitude": 55.6150, "longitude": 12.0820 },
+  "3-soundscape-device": { "name": "Node 3", "latitude": 55.6130, "longitude": 12.0770, "interval_min": 5 }
+}
