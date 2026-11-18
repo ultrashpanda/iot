@@ -30,7 +30,7 @@
   </header>
 
   <main>
-    <section class="intro shell" aria-labelledby="main-title">
+    <section class="intro shell visually-hidden" aria-labelledby="main-title">
       <div class="intro-copy">
         <p class="eyebrow"><span class="eyebrow-dot"></span> ROSKILDE AREA · EXPERIMENTAL PROJECT</p>
         <h1 id="main-title">Find your <em>calmer</em> place.</h1>
@@ -43,29 +43,13 @@
       </div>
     </section>
 
-    <section class="shell snapshot" aria-label="Current monitoring summary">
-      <div class="stat-card">
-        <span class="stat-label">MONITORING POINTS</span>
-        <strong id="stat-total">—</strong>
-        <span class="stat-sub" id="stat-source-split">Checking sources…</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-label">AT OR BELOW YOUR LIMIT</span>
-        <strong id="stat-under">—</strong>
-        <span class="stat-sub">Locations, not a safety rating</span>
-      </div>
-      <div class="stat-card stat-card-best">
-        <span class="stat-label">LOWEST CURRENT READING</span>
-        <strong id="stat-lowest">—</strong>
-        <span class="stat-sub" id="stat-lowest-name">Across reporting nodes</span>
-      </div>
-    </section>
 
     <section class="shell explorer" id="locations" aria-labelledby="explorer-title">
       <div class="section-heading">
         <div>
           <p class="eyebrow dark-eyebrow">DISCOVER THE AREA</p>
           <h2 id="explorer-title">Noise map <span class="muted-heading">/ Live overview</span></h2>
+          <p class="summary-line" id="summary-line">Checking sources…</p>
         </div>
         <div class="refresh-meta">
           <span id="last-refresh">Waiting for measurements…</span>

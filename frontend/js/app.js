@@ -92,13 +92,11 @@ function renderStats() {
   const reporting = state.devices.filter((d) => conditionFor(d, state.threshold) !== 'unavailable');
   const under = reporting.filter((d) => conditionFor(d, state.threshold) === 'under');
   const lowest = reporting.reduce((min, d) => !min || d.noise_avg < min.noise_avg ? d : min, null);
-  $('stat-total').textContent = String(reporting.length);
   const physical = reporting.filter((d) => d.source === 'physical').length;
   const simulated = reporting.filter((d) => d.source === 'simulated').length;
-  $('stat-source-split').textContent = `${physical} physical · ${simulated} simulated`;
-  $('stat-under').textContent = `${under.length} / ${reporting.length}`;
-  $('stat-lowest').textContent = lowest ? `${Math.round(lowest.noise_avg)} dB` : '—';
-  $('stat-lowest-name').textContent = lowest ? lowest.name : 'No recent readings';
+  $('summary-line').textContent = reporting.length === 0 ? 'No locations reporting right now'
+    : `${reporting.length} reporting (${physical} physical · ${simulated} simulated) · ${under.length} at or below your limit`
+      + (lowest ? ` · quietest: ${lowest.name}, ${Math.round(lowest.noise_avg)} dB` : '');
 }
 
 function makeLocationButton(device) {
