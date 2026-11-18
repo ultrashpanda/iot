@@ -186,6 +186,7 @@ static inline void stateInit(NodeState &s) {
 #define DL_BLINK         0x02   // run the LED pattern
 #define DL_SLEEP_STARTED 0x04
 #define DL_WOKE          0x08
+#define DL_REBOOT        0x10   // v0.8: restart through the watchdog after this downlink
 
 // Parse one downlink payload (port 1). Out-of-range or malformed commands are ignored.
 // Returns a bitmask of DL_* effects.
@@ -223,6 +224,8 @@ static inline uint8_t applyDownlink(NodeState &s, const uint8_t *b, size_t len) 
     case 0x05:  // Wake
       if (len == 1 && s.sleeping) { s.sleeping = false; return DL_WOKE; }
       return 0;
+    case 0x06:  // Reboot (v0.8)
+      return len == 1 ? DL_REBOOT : 0;
     default:
       return 0;
   }

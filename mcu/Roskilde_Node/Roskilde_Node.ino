@@ -1,5 +1,5 @@
 /*
-  Roskilde sensor node - firmware v0.7
+  Roskilde sensor node - firmware v0.8
   Board: Arduino Pro Mini 3.3 V 8 MHz (ATmega328P or 328PB clone)
   Arduino IDE: MiniCore -> Board "ATmega328", Variant 328P or 328PB (check the avrdude signature),
                Clock External 8 MHz, BOD 2.7 V, Bootloader Yes (UART0), upload baud 38400.
@@ -36,6 +36,11 @@
     - Pin-change wake-ups from the radio's serial line are blocked during sleep.
     - Reset cause with the MiniCore bootloader: a reset-pin press is reported as watchdog (0x08).
       In the field: 0x01 / 0x04 = power lost (new batteries if battery % jumps), 0x08 = hang recovered.
+
+  v0.8 (18 Nov, remote restart)
+    - Downlink 06 = reboot: after the uplink that received it, the node restarts through the
+      watchdog (reset cause 0x08 on port 4). The next boot sends port 2 (fresh Wi-Fi scan) and port 4.
+    - FW_MINOR fixed: v0.7 reported itself as 0.6 on port 4.
 
   v0.7 (13 Nov, delivery of the once-per-boot messages)
     - Port 2 and port 4 are sent CONFIRMED (up to BOOT_SEND_TRIES attempts, 60 s apart), so the
@@ -689,6 +694,12 @@ void handleDownlink() {
     Serial.println(F(" min"));
   }
   if (fx & DL_WOKE) Serial.println(F("Wake: resuming measurements"));
+  if (fx & DL_REBOOT) {                        // last, so other effects of this downlink are done
+    Serial.println(F("Reboot command: restarting through the watchdog"));
+    Serial.flush();
+    wdt_enable(WDTO_15MS);                     // system reset mode (also clears interrupt mode)
+    for (;;) {}
+  }
 }
 
 // ================================================================== sensors

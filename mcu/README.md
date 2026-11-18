@@ -4,7 +4,7 @@ Firmware for the sensor nodes (Arduino Pro Mini + RN2483A LoRa + ESP-01): sampli
 
 | Folder | Contents |
 |---|---|
-| `Roskilde_Node/` | Main node firmware (currently v0.7) |
+| `Roskilde_Node/` | Main node firmware (currently v0.8) |
 | `esp_sniffer/` | ESP-01 firmware: Wi-Fi scan and phone counting |
 | `tools/batt_cal/` | Battery voltage calibration sketch |
 | `tools/wdt_test/` | Watchdog test sketch |
@@ -39,4 +39,5 @@ Runs `esp_sniffer/esp_sniffer.ino` (board "Generic ESP8266 Module", upload 11520
 - v0.4 (13 Nov 2026): own calibrated deep sleep instead of Low-Power; CAL_OFFSET_DB 55.0 with the trimmer fully clockwise; BATT_CAL 0.993 (node 1); interval 5 min; reset-cause notes for the MiniCore bootloader.
 - v0.5 (13 Nov 2026): `LORA_DR` in config.h (0 = SF12 … 5 = SF7). If the SF7 join fails, the join is retried at LORA_DR, and uplinks go out at LORA_DR. Set to 0 for coverage tests; set back to 5 for deployment (SF12 allows only ~20 uplinks/day under TTN fair use).
 - v0.6 (13 Nov 2026): phone counting. The ESP-01 sniffs for 45 s (downlink 02) in parallel with the sound/DHT measurement (`SNIFF_PARALLEL`); crowd on port 1 = phones nearby (flag 0x01 cleared, 0x10 = list full). Interval 10 min. New EEPROM magic, so stored settings are replaced by the new defaults once. Tested 13 Nov: full cycle works, ESP adds no mic noise.
+- v0.8 (18 Nov 2026): downlink `06` restarts the node through the watchdog (remote restart, also triggers a fresh Wi-Fi scan on port 2). FW_MINOR fixed (v0.7 reported 0.6).
 - v0.7 (13 Nov 2026): port 2 and port 4 sent confirmed (up to 3 attempts, 60 s apart); boot-loop guard in EEPROM (a boot that ran < 60 min makes the next boot send port 2/4 unconfirmed); link check every 8 h. Downlink budget: ~3/day normally, +3 on a boot day.
