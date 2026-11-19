@@ -49,7 +49,7 @@ Response `200 OK`, `Content-Type: application/json`:
 |---|---|---|
 | `id` | non-empty string | Stable, unique ID; important for updating markers |
 | `name` | string | Human-readable place name, can default to `id` |
-| `latitude`, `longitude` | numbers | WGS84 decimal degrees; stored at deployment |
+| `latitude`, `longitude` | string or `null` | Position of the node |
 | `noise_avg`, `noise_peak` | number or `null` | Approximate sound pressure level in dB (not certified dB(A)) |
 | `temperature` | number or `null` | Degrees Celsius |
 | `humidity` | number or `null` | Relative humidity (%) |
