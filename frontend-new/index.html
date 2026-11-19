@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f7f2" />
   <meta name="description" content="SoundScape — explore the festival by sound, find a quieter spot and choose your walking route." />
-  <title>SoundScape v5.4 — Explore by sound</title>
+  <title>SoundScape v5.6 — Explore by sound</title>
   <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css?v=4.7.1" />
-  <link rel="stylesheet" href="css/style.css?v=5.4" />
+  <link rel="stylesheet" href="css/style.css?v=5.6" />
   <style>
     #demoGpsBtn[hidden]{display:none}
     #demoGpsBtn{font-size:11px;font-weight:800}
@@ -21,17 +21,17 @@
   <main class="app" id="app">
     <div id="map" role="application" aria-label="Interactive SoundScape festival map"></div>
     <header class="header" aria-label="App header">
-      <div class="brand"><span class="brand-logo" aria-hidden="true">≋</span><span>Sound<span class="brand-strong">Scape</span><span class="version-label">v5.4</span></span></div>
-      <button class="icon-btn help-btn" id="helpBtn" aria-label="About SoundScape" title="About SoundScape">?</button>
+      <div class="brand"><span class="brand-logo" aria-hidden="true"><svg viewBox="0 0 100 100"><path d="M22.0,30.0 L24.3,27.9 L26.7,26.1 L29.0,24.9 L31.3,24.5 L33.7,24.9 L36.0,26.1 L38.3,27.9 L40.7,30.0 L43.0,32.1 L45.3,33.9 L47.7,35.1 L50.0,35.5 L52.3,35.1 L54.7,33.9 L57.0,32.1 L59.3,30.0 L61.7,27.9 L64.0,26.1 L66.3,24.9 L68.7,24.5 L71.0,24.9 L73.3,26.1 L75.7,27.9 L78.0,30.0 M22.0,50.0 L24.3,47.9 L26.7,46.1 L29.0,44.9 L31.3,44.5 L33.7,44.9 L36.0,46.1 L38.3,47.9 L40.7,50.0 L43.0,52.1 L45.3,53.9 L47.7,55.1 L50.0,55.5 L52.3,55.1 L54.7,53.9 L57.0,52.1 L59.3,50.0 L61.7,47.9 L64.0,46.1 L66.3,44.9 L68.7,44.5 L71.0,44.9 L73.3,46.1 L75.7,47.9 L78.0,50.0 M22.0,70.0 L24.3,67.9 L26.7,66.1 L29.0,64.9 L31.3,64.5 L33.7,64.9 L36.0,66.1 L38.3,67.9 L40.7,70.0 L43.0,72.1 L45.3,73.9 L47.7,75.1 L50.0,75.5 L52.3,75.1 L54.7,73.9 L57.0,72.1 L59.3,70.0 L61.7,67.9 L64.0,66.1 L66.3,64.9 L68.7,64.5 L71.0,64.9 L73.3,66.1 L75.7,67.9 L78.0,70.0" fill="none" stroke="#fff" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Sound<span class="brand-strong">Scape</span><span class="version-label">v5.6</span></span></div>
+      <button class="icon-btn help-btn" id="helpBtn" aria-label="About SoundScape" title="About SoundScape" data-icon="help"></button>
     </header>
     <div class="top-controls">
       <section class="limit-card" aria-label="Personal noise limit">
         <button id="limitToggle" class="limit-toggle" aria-expanded="false" aria-controls="limitEditor">
-          <span class="limit-icon" aria-hidden="true">◖))</span>
+          <span class="limit-icon" aria-hidden="true" data-icon="volume"></span>
           <span class="limit-label">Your noise limit</span>
           <strong id="limitValue">75 dB</strong>
-          <span class="edit-action"><span class="pencil" aria-hidden="true">✎</span> Adjust</span>
-          <span class="chevron" id="limitChevron" aria-hidden="true">⌄</span>
+          <span class="edit-action"><span class="pencil" aria-hidden="true" data-icon="pencil"></span> Adjust</span>
+          <span class="chevron" id="limitChevron" aria-hidden="true" data-icon="chevron-down"></span>
         </button>
         <div class="limit-editor" id="limitEditor" hidden>
           <label for="noiseSlider">Highlight sound levels above your preference</label>
@@ -43,45 +43,44 @@
       <div class="chip-row">
         <div class="status-chip" id="dataStatus" role="status" aria-live="polite"><span class="status-dot"></span><span>Loading measurements…</span></div>
         <div class="location-chip" id="locationStatus" role="status">Locating you…</div>
-        <button type="button" class="sim-chip" id="simBtn" aria-pressed="false" hidden>＋ Simulated nodes</button>
+        <button type="button" class="sim-chip" id="simBtn" aria-pressed="false" hidden>Simulated nodes</button>
         <button type="button" class="warn-chip" id="outsideChip" hidden></button>
       </div>
     </div>
     <div class="map-actions" aria-label="Map controls">
-      <button class="icon-btn map-action compass-btn" id="compassBtn" title="Compass: tap for north up / heading up" aria-label="Compass" aria-pressed="false" hidden><span>▲</span><small>N</small></button>
-      <button class="icon-btn map-action" id="locateBtn" title="Find my location" aria-label="Find my location">⌖</button>
+      <button class="icon-btn map-action compass-btn" id="compassBtn" title="Compass: tap for north up / heading up" aria-label="Compass" aria-pressed="false" hidden><span data-icon="needle"></span><small>N</small></button>
+      <button class="icon-btn map-action" id="locateBtn" title="Find my location" aria-label="Find my location" data-icon="locate"></button>
       <button class="icon-btn map-action" id="demoGpsBtn" title="Toggle simulated festival location" aria-label="Toggle simulated festival location" hidden>Demo</button>
-      <button class="icon-btn map-action" id="resetMapBtn" title="Show festival" aria-label="Show entire festival">▧</button>
+      <button class="icon-btn map-action" id="resetMapBtn" title="Show festival" aria-label="Show entire festival" data-icon="fit"></button>
     </div>
     <section class="bottom-tools" id="bottomTools" aria-label="Find monitoring locations">
-      <button class="quick-btn quieter" id="quietestBtn"><span class="quick-icon">◖</span><span><strong>Quietest spot</strong><small>Lowest measured noise</small></span></button>
+      <button class="quick-btn quieter" id="quietestBtn"><span class="quick-icon" data-icon="quiet"></span><span><strong>Quietest spot</strong><small>Lowest measured noise</small></span></button>
     </section>
     <div class="sheet-shade" id="sheetShade" hidden></div>
     <section class="sheet" id="deviceSheet" role="dialog" aria-modal="false" aria-label="Location details" aria-hidden="true">
       <div class="sheet-handle-hit" id="sheetHandle" tabindex="0" role="button" aria-label="Expand or collapse location details"><div class="sheet-handle"></div></div>
       <div class="sheet-inner">
-        <div class="sheet-title-row"><div><p class="eyebrow">SELECTED LOCATION</p><h2 id="sheetName">Location</h2></div><div class="sheet-right"><span id="sheetStatus" class="device-status">Online</span><button id="closeSheet" class="close-btn" aria-label="Close details">×</button></div></div>
+        <div class="sheet-title-row"><div><p class="eyebrow">SELECTED LOCATION</p><h2 id="sheetName">Location</h2></div><div class="sheet-right"><span id="sheetStatus" class="device-status">Online</span><button id="closeSheet" class="close-btn" aria-label="Close details" data-icon="close"></button></div></div>
         <div class="sheet-main"><div class="reading"><strong id="sheetNoise">—</strong><span id="sheetNoiseUnit">dB average</span></div><span id="sheetClassification" class="classification"></span></div>
         <div id="sheetWarnings" class="warnings" aria-live="polite"></div>
-        <button id="sheetExpandBtn" class="expand-btn" aria-expanded="false">More details <span>⌄</span></button>
+        <button id="sheetExpandBtn" class="expand-btn" aria-expanded="false">More details <span class="ic-slot" data-icon="chevron-down"></span></button>
         <div class="sheet-details" id="sheetDetails" hidden>
           <div class="details-grid">
-            <div class="detail"><span class="detail-symbol">◖))</span><span class="detail-label">Peak sound</span><strong id="sheetPeak">—</strong></div>
-            <div class="detail"><span class="detail-symbol">☼</span><span class="detail-label">Temperature</span><strong id="sheetTemperature">—</strong></div>
-            <div class="detail"><span class="detail-symbol">♧</span><span class="detail-label">Humidity</span><strong id="sheetHumidity">—</strong></div>
-            <div class="detail"><span class="detail-symbol">⌁</span><span class="detail-label" id="crowdLabel">Wi-Fi networks detected</span><strong id="sheetCrowd">—</strong></div>
-            <div class="detail"><span class="detail-symbol">▮</span><span class="detail-label">Estimated battery</span><strong id="sheetBatteryPct">—</strong></div>
-            <div class="detail"><span class="detail-symbol">ϟ</span><span class="detail-label">Battery voltage</span><strong id="sheetBatteryV">—</strong></div>
+            <div class="detail"><span class="detail-symbol" data-icon="peak"></span><span class="detail-label">Peak sound</span><strong id="sheetPeak">—</strong></div>
+            <div class="detail"><span class="detail-symbol" data-icon="thermometer"></span><span class="detail-label">Temperature</span><strong id="sheetTemperature">—</strong></div>
+            <div class="detail"><span class="detail-symbol" data-icon="droplet"></span><span class="detail-label">Humidity</span><strong id="sheetHumidity">—</strong></div>
+            <div class="detail"><span class="detail-symbol" data-icon="wifi"></span><span class="detail-label" id="crowdLabel">Estimated crowd</span><strong id="sheetCrowd">—</strong></div>
+            <div class="detail"><span class="detail-symbol" data-icon="battery"></span><span class="detail-label">Estimated battery</span><strong id="sheetBatteryPct">—</strong></div>
+            <div class="detail"><span class="detail-symbol" data-icon="gauge"></span><span class="detail-label">Battery voltage</span><strong id="sheetBatteryV">—</strong></div>
           </div>
-          <p class="crowd-disclaimer" id="crowdDisclaimer">Wi-Fi networks do not represent a count of people.</p>
         </div>
         <div class="sheet-meta"><span id="sheetUpdated">Last reading unavailable</span><span id="sheetSource" class="source-tag">Real device</span></div>
-        <button id="navigateBtn" class="primary-btn">↗&nbsp; Take me there</button>
+        <button id="navigateBtn" class="primary-btn"><span class="ic-slot" data-icon="navigate"></span> Take me there</button>
       </div>
     </section>
     <section class="route-panel" id="routePanel" role="dialog" aria-label="Route options" aria-hidden="true">
-      <div class="route-head"><div><p class="eyebrow">NAVIGATING TO</p><h2 id="routeDestination">Destination</h2></div><button id="closeRoute" class="close-btn" aria-label="Close route">×</button></div>
-      <div class="route-tabs" role="group" aria-label="Route type"><button id="fastestTab" class="route-tab" aria-pressed="false">⚡ Fastest</button><button id="quieterTab" class="route-tab active" aria-pressed="true">◖ Quieter</button></div>
+      <div class="route-head"><div><p class="eyebrow">NAVIGATING TO</p><h2 id="routeDestination">Destination</h2></div><button id="closeRoute" class="close-btn" aria-label="Close route" data-icon="close"></button></div>
+      <div class="route-tabs" role="group" aria-label="Route type"><button id="fastestTab" class="route-tab" aria-pressed="false"><span class="ic-slot" data-icon="zap"></span> Fastest</button><button id="quieterTab" class="route-tab active" aria-pressed="true"><span class="ic-slot" data-icon="quiet"></span> Quieter</button></div>
       <div id="navRemaining" class="nav-remaining" aria-live="polite"></div>
       <div id="routeInfo" class="route-info">Choose a route to preview.</div>
       <div class="route-actions"><button id="demoLocationBtn" class="secondary-btn" hidden>Try demo location</button><button id="routeStartBtn" class="primary-btn">Start navigation</button></div>
@@ -91,6 +90,6 @@
     <footer class="osm-attribution">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a></footer>
   </main>
   <script src="vendor/maplibre/maplibre-gl.js?v=4.7.1"></script>
-  <script type="module" src="js/app.js?v=5.4"></script>
+  <script type="module" src="js/app.js?v=5.6"></script>
 </body>
 </html>

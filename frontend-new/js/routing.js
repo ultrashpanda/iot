@@ -4,7 +4,7 @@
 // short access legs or when the detour on paths would be much longer.
 // Mapped water is impassable; the railway can only be crossed where a mapped road/path crosses it.
 // Fences, stages and temporary barriers are unknown.
-import { CONFIG } from './config.js?v=5.4';
+import { CONFIG } from './config.js?v=5.6';
 const R=6371000,latRef=CONFIG.FESTIVAL_CENTER[0]*Math.PI/180;
 const meterX=R*Math.cos(latRef)*Math.PI/180,meterY=R*Math.PI/180;
 function xy(lat,lon){return [(lon-CONFIG.FESTIVAL_CENTER[1])*meterX,(lat-CONFIG.FESTIVAL_CENTER[0])*meterY]}

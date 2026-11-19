@@ -3,6 +3,7 @@
 A standalone frontend: HTML, CSS, JavaScript, MapLibre GL, Nginx and Docker. No backend code is bundled. Source map features are taken from the user-provided OpenStreetMap export and are referenced by GPS coordinates.
 
 ## Features
+- Version 5.6: text symbols replaced by a small set of vector line icons (`js/icons.js`: speaker, waveform, thermometer, droplet, Wi-Fi, battery, gauge, crosshair, compass needle…), crisp on every device; the app logo symbol is now a centred vector (same as the poster logo). `TEST_POSITIONS` is back in `js/config.js`.
 - Version 5.4: the place sheet's *More details* also shows **Estimated battery** (`battery_estimate_pct`) and **Battery voltage** (`battery_voltage`, shown as "Not measured" while the backend sends null). Note: the Team 3 contract describes the battery estimate as staff information.
 - Version 5.3: the app always reads the real nodes from the backend (`API_URL`, default `/api/devices` = same origin as in the Team 3 contract). The **Simulated nodes** button adds the 14 simulated nodes on top; they carry a dashed **SIM** tag on the map and "Simulated" in the place sheet. If the backend is unreachable the status chip says so and the simulated nodes still work. While simulated nodes (or `TEST_POSITIONS`) are on, the draggable demo position is available. `DATA_MODE` and `?mode=` were removed; use `SIMULATED_BUTTON` / `SIMULATED_ON_START` in `js/config.js`.
 - Version 5.2: `TEST_POSITIONS` in `js/config.js` (tests only) shows a real node at a chosen festival position while keeping all its real measurements; the place sheet says it is a test position and shows the real coordinates. While the list is not empty the draggable demo position is also available in `api` mode. Nodes outside the festival map are reported by an orange "outside the map" chip (tap it to see their name, id and position). Keep `TEST_POSITIONS: {}` for the real festival.
@@ -21,11 +22,11 @@ A standalone frontend: HTML, CSS, JavaScript, MapLibre GL, Nginx and Docker. No 
 - GPS with permission over HTTPS; optional explicit **Try demo location** for testing.
 
 ## Launch locally without Docker
-From the `soundscape-frontend` folder:
+From the app folder:
 ```sh
 python serve.py
 ```
-Then open `http://localhost:8080` (not `file://`). `serve.py` is a plain Python static server with browser caching disabled. No internet connection is required: Leaflet is bundled in `vendor/leaflet/`.
+Then open `http://localhost:8080` (not `file://`). `serve.py` is a plain Python static server with browser caching disabled.
 
 ## Launch the frontend Docker container
 ```sh
@@ -57,6 +58,7 @@ OpenStreetMap contributors © OpenStreetMap: https://www.openstreetmap.org/copyr
 - `js/map.js` — MapLibre map, sound blobs, labels, location and route layers
 - `js/routing.js` — path-network + open-field A* routing, noise penalty, route progress/bearing
 - `js/app.js` — UI, bottom sheets and GPS
+- `js/icons.js` — vector line icons used across the UI
 - `vendor/maplibre/` — MapLibre GL JS 4.7.1 (BSD-3-Clause, see LICENSE.txt)
 - `serve.py` — local no-cache test server
 - `data/festival.geojson` — georeferenced OSM extracted features

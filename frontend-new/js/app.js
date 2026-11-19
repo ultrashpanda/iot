@@ -1,7 +1,9 @@
-import { CONFIG } from './config.js?v=5.4';
-import {fetchDevices} from './api.js?v=5.4';
-import {map,loadGeography,getGeography,renderMarkers,onMarkerSelect,selectMarker,clearMarkerSelection,resetView,showUserLocation,clearUserLocation,drawRoute,clearRoute,isUsable,focusLocation,followLocation,onDemoLocationMoved,northUp,onRotate} from './map.js?v=5.4';
-import {computeRoute,meters,routeProgress} from './routing.js?v=5.4';
+import { CONFIG } from './config.js?v=5.6';
+import { icon, hydrateIcons } from './icons.js?v=5.6';
+hydrateIcons();
+import {fetchDevices} from './api.js?v=5.6';
+import {map,loadGeography,getGeography,renderMarkers,onMarkerSelect,selectMarker,clearMarkerSelection,resetView,showUserLocation,clearUserLocation,drawRoute,clearRoute,isUsable,focusLocation,followLocation,onDemoLocationMoved,northUp,onRotate} from './map.js?v=5.6';
+import {computeRoute,meters,routeProgress} from './routing.js?v=5.6';
 const $=id=>document.getElementById(id);
 let devices=[],serverTime=new Date().toISOString(),threshold=(()=>{try{return Number(localStorage.getItem('soundscape-noise-limit'))}catch{return 0}})()||CONFIG.DEFAULT_NOISE_LIMIT;
 let selected=null,sheetExpanded=false,location=null,locationType=null,geoWatch=null,destination=null,routeMode='quieter',navigationActive=false,currentRoute=null,routeLastRerender=0;
@@ -9,7 +11,7 @@ function num(v,digits=1){return v===null||v===undefined||!Number.isFinite(Number
 function deviceById(id){return devices.find(x=>String(x.id)===String(id))}
 function toast(message){const el=$('toast');el.textContent=message;el.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('visible'),3600)}
 function colorClass(d){if(!isUsable(d,serverTime))return 'unavailable';if(d.noise_clipped||d.noise_avg>threshold+10)return 'high';if(d.noise_avg>threshold)return 'near';return 'low'}
-function showLimit(){const open=$('limitEditor').hidden;$('limitEditor').hidden=!open;$('limitToggle').setAttribute('aria-expanded',String(open));$('limitChevron').textContent=open?'⌃':'⌄'}
+function showLimit(){const open=$('limitEditor').hidden;$('limitEditor').hidden=!open;$('limitToggle').setAttribute('aria-expanded',String(open));$('limitChevron').innerHTML=icon(open?'chevron-up':'chevron-down')}
 $('limitToggle').addEventListener('click',showLimit);$('limitDone').addEventListener('click',()=>{if(!$('limitEditor').hidden)showLimit()});
 function setLimit(v){threshold=Number(v);$('limitValue').textContent=`${threshold} dB`; $('noiseSlider').value=threshold;try{localStorage.setItem('soundscape-noise-limit',String(threshold))}catch{}refreshVisuals();if(destination){clearTimeout(setLimit.t);setLimit.t=setTimeout(()=>updateRoute(false),150)}}
 $('noiseSlider').addEventListener('input',e=>setLimit(e.target.value));setLimit(Math.max(50,Math.min(100,threshold)));
@@ -20,7 +22,7 @@ if(!CONFIG.SIMULATED_BUTTON)simOn=!!CONFIG.SIMULATED_ON_START;
 const hasTestPositions=Object.keys(CONFIG.TEST_POSITIONS||{}).length>0;
 // The draggable demo position is offered while simulated nodes or test positions are on.
 const demoAllowed=()=>simOn||hasTestPositions;
-function syncSimButton(){const b=$('simBtn');b.hidden=!CONFIG.SIMULATED_BUTTON;b.setAttribute('aria-pressed',String(simOn));b.textContent=simOn?'✓ Simulated nodes':'＋ Simulated nodes'}
+function syncSimButton(){const b=$('simBtn');b.hidden=!CONFIG.SIMULATED_BUTTON;b.setAttribute('aria-pressed',String(simOn));b.innerHTML=icon(simOn?'check':'plus')+' Simulated nodes'}
 async function poll(){
  const response=await fetchDevices({simulated:simOn});
  devices=response.devices;serverTime=response.generated_at;
@@ -37,13 +39,13 @@ let outside=[];
 function updateOutside(){
  const [[s,w],[n,e]]=CONFIG.MAP_BOUNDS;
  outside=devices.filter(d=>{const la=Number(d.latitude),lo=Number(d.longitude);return Number.isFinite(la)&&Number.isFinite(lo)&&(la<s||la>n||lo<w||lo>e)});
- const chip=$('outsideChip');chip.hidden=!outside.length;chip.textContent=`⚠ ${outside.length} node${outside.length>1?'s':''} outside the map`;
+ const chip=$('outsideChip');chip.hidden=!outside.length;chip.innerHTML=icon('warning')+` ${outside.length} node${outside.length>1?'s':''} outside the map`;
 }
 $('outsideChip').addEventListener('click',()=>{if(!outside.length)return;
  alert('These nodes are outside the festival map, so they are not shown:\n\n'+outside.map(d=>`• ${d.name||d.id}\n  id: ${d.id}\n  position: ${Number(d.latitude).toFixed(5)}, ${Number(d.longitude).toFixed(5)}`).join('\n\n')+'\n\nFor tests, add the id to TEST_POSITIONS in js/config.js to show the node on the festival map.')});
 function openSheet(id){const d=deviceById(id);if(!d)return;selected=id;closeRoute();selectMarker(id,d);refreshVisuals();$('deviceSheet').classList.add('visible');$('deviceSheet').setAttribute('aria-hidden','false');$('bottomTools').classList.add('hidden');setExpanded(false);updateSheet()}
 function closeSheet(){selected=null;$('deviceSheet').classList.remove('visible','expanded');$('deviceSheet').setAttribute('aria-hidden','true');$('bottomTools').classList.remove('hidden');clearMarkerSelection();refreshVisuals()}
-function setExpanded(v){sheetExpanded=v;$('deviceSheet').classList.toggle('expanded',v);$('sheetDetails').hidden=!v;$('sheetExpandBtn').setAttribute('aria-expanded',String(v));$('sheetExpandBtn').innerHTML=v?'Fewer details <span>⌃</span>':'More details <span>⌄</span>'}
+function setExpanded(v){sheetExpanded=v;$('deviceSheet').classList.toggle('expanded',v);$('sheetDetails').hidden=!v;$('sheetExpandBtn').setAttribute('aria-expanded',String(v));$('sheetExpandBtn').innerHTML=v?'Fewer details '+icon('chevron-up'):'More details '+icon('chevron-down')}
 $('closeSheet').addEventListener('click',closeSheet);$('sheetExpandBtn').addEventListener('click',()=>setExpanded(!sheetExpanded));$('sheetHandle').addEventListener('click',()=>setExpanded(!sheetExpanded));$('sheetHandle').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setExpanded(!sheetExpanded)}});
 let touchY=0;$('deviceSheet').addEventListener('touchstart',e=>{touchY=e.touches[0].clientY},{passive:true});$('deviceSheet').addEventListener('touchend',e=>{const dy=e.changedTouches[0].clientY-touchY;if(dy<-45)setExpanded(true);if(dy>55){if(sheetExpanded)setExpanded(false);else closeSheet()}},{passive:true});
 function updateSheet(){const d=deviceById(selected);if(!d)return;const fresh=isUsable(d,serverTime),status=d.status==='sleeping'?'Paused':d.status==='offline'?'Unavailable':fresh?'Online':'Stale';
@@ -54,10 +56,10 @@ function updateSheet(){const d=deviceById(selected);if(!d)return;const fresh=isU
  // Battery: shown even for paused/stale nodes (it is node health, not a measurement of the place).
  $('sheetBatteryPct').textContent=d.battery_estimate_pct!==null&&d.battery_estimate_pct!==undefined?num(d.battery_estimate_pct,0)+'%':'—';
  {const hasV=d.battery_voltage!==null&&d.battery_voltage!==undefined&&Number.isFinite(Number(d.battery_voltage));$('sheetBatteryV').textContent=hasV?num(d.battery_voltage,2)+' V':'Not measured';$('sheetBatteryV').classList.toggle('muted-value',!hasV)}
- const net=d.crowd_source==='networks';$('crowdLabel').textContent=net?'Wi-Fi networks detected':'Crowd activity';$('sheetCrowd').textContent=net?num(fresh?d.crowd_count:null,0):'Not calibrated';$('crowdDisclaimer').textContent=net?'Wi-Fi networks do not represent a count of people.':'Phone detections cannot be interpreted as a headcount.';
- const ws=[];if(d.test_position)ws.push(`⚠ Test position — this real node is actually at ${Number(d.real_latitude).toFixed(5)}, ${Number(d.real_longitude).toFixed(5)}`);if(d.might_have_moved)ws.push('⚠ Position may be out of date');if(d.noise_clipped&&fresh)ws.push('⚠ Microphone reached its measuring limit');if(!fresh)ws.push('⚠ Previous measurements must not be interpreted as a quiet area');$('sheetWarnings').replaceChildren(...ws.map(s=>{const el=document.createElement('p');el.textContent=s;return el}));
+ const net=d.crowd_source==='networks';$('crowdLabel').textContent='Estimated crowd';$('sheetCrowd').textContent=net?num(fresh?d.crowd_count:null,0):'Not calibrated';
+ const ws=[];if(d.test_position)ws.push(`Test position — this real node is actually at ${Number(d.real_latitude).toFixed(5)}, ${Number(d.real_longitude).toFixed(5)}`);if(d.might_have_moved)ws.push('Position may be out of date');if(d.noise_clipped&&fresh)ws.push('Microphone reached its measuring limit');if(!fresh)ws.push('Previous measurements must not be interpreted as a quiet area');$('sheetWarnings').replaceChildren(...ws.map(s=>{const el=document.createElement('p');el.innerHTML=icon('warning');const t=document.createElement('span');t.textContent=s;el.append(t);return el}));
  const age=d.last_updated?Math.max(0,Math.round((Date.parse(serverTime)-Date.parse(d.last_updated))/60000)):null;$('sheetUpdated').textContent=age===null?'Never reported':`Last reading: ${age<1?'just now':age+' min ago'}`;
- $('sheetSource').textContent=d.source==='simulated'?'◌ Simulated':'● Real device';$('sheetSource').classList.toggle('simulated',d.source==='simulated');$('navigateBtn').disabled=!fresh;$('navigateBtn').textContent=fresh?'↗  Take me there':'Navigation unavailable';
+ $('sheetSource').innerHTML=d.source==='simulated'?icon('dot-dashed')+' Simulated':icon('dot')+' Real device';$('sheetSource').classList.toggle('simulated',d.source==='simulated');$('navigateBtn').disabled=!fresh;$('navigateBtn').innerHTML=fresh?icon('navigate')+' Take me there':'Navigation unavailable';
 }
 onMarkerSelect(openSheet);
 function jumpToExtreme(mode){const pool=devices.filter(d=>isUsable(d,serverTime));if(!pool.length){toast('No current measurements available');return}pool.sort((a,b)=>a.noise_avg-b.noise_avg);openSheet(String((mode==='quiet'?pool[0]:pool[pool.length-1]).id))}
@@ -117,17 +119,17 @@ $('closeRoute').addEventListener('click',closeRoute);
 function setRouteMode(mode){if(mode===routeMode&&currentRoute)return;routeMode=mode;$('fastestTab').classList.toggle('active',mode==='fastest');$('quieterTab').classList.toggle('active',mode==='quieter');$('fastestTab').setAttribute('aria-pressed',String(mode==='fastest'));$('quieterTab').setAttribute('aria-pressed',String(mode==='quieter'));updateRoute()}
 $('fastestTab').addEventListener('click',()=>setRouteMode('fastest'));$('quieterTab').addEventListener('click',()=>setRouteMode('quieter'));
 $('demoLocationBtn').addEventListener('click',()=>{enableDemoLocation();$('demoLocationBtn').hidden=true;updateRoute()});
-function tabLabel(id,icon,name,r){$(id).innerHTML=`<span>${icon} ${name}</span><small>${r?`${r.minutes} min · ~${Math.round(r.noiseAvg)} dB`:'—'}</small>`}
+function tabLabel(id,ic,name,r){$(id).innerHTML=`<span>${icon(ic)} ${name}</span><small>${r?`${r.minutes} min · ~${Math.round(r.noiseAvg)} dB`:'—'}</small>`}
 function routeInput(){return devices.filter(d=>isUsable(d,serverTime))}
 function updateRoute(fit=true){if(!destination)return;
- if(!location){$('routeInfo').textContent='Waiting for your location…';$('routeStartBtn').disabled=true;$('demoLocationBtn').hidden=!demoAllowed();clearRoute();tabLabel('fastestTab','⚡','Fastest');tabLabel('quieterTab','◖','Quieter');return}
+ if(!location){$('routeInfo').textContent='Waiting for your location…';$('routeStartBtn').disabled=true;$('demoLocationBtn').hidden=!demoAllowed();clearRoute();tabLabel('fastestTab','zap','Fastest');tabLabel('quieterTab','quiet','Quieter');return}
  const input=routeInput(),to=[Number(destination.latitude),Number(destination.longitude)];
  try{
   const routes={fastest:computeRoute(location,to,'fastest',input,threshold,getGeography()),quieter:computeRoute(location,to,'quieter',input,threshold,getGeography())};
   // The fastest option must never be slower than the quieter one.
   if(routes.quieter.distance<routes.fastest.distance)routes.fastest={...routes.quieter,mode:'fastest'};
   currentRoute=routes[routeMode];
-  tabLabel('fastestTab','⚡','Fastest',routes.fastest);tabLabel('quieterTab','◖','Quieter',routes.quieter);
+  tabLabel('fastestTab','zap','Fastest',routes.fastest);tabLabel('quieterTab','quiet','Quieter',routes.quieter);
   const other=routes[routeMode==='quieter'?'fastest':'quieter'],dMin=currentRoute.minutes-other.minutes,dDb=Math.round(currentRoute.noiseAvg-other.noiseAvg);
   let compare='';
   if(routeMode==='quieter')compare=dDb<0?`${-dDb} dB quieter than the fastest route${dMin>0?`, +${dMin} min`:''}`:'The fastest route is already the quietest option';
@@ -135,7 +137,7 @@ function updateRoute(fit=true){if(!destination)return;
   $('routeInfo').innerHTML=`<strong>${Math.round(currentRoute.distance)} m · ~${currentRoute.minutes} min walk</strong><span>Estimated noise on the way: ~${Math.round(currentRoute.noiseAvg)} dB avg, peaks ~${Math.round(currentRoute.noisePeak)} dB</span><span>${compare}</span>${locationType==='demo'?'<em>Using demo position · drag the blue dot to change start</em>':''}`;
   $('routeStartBtn').disabled=false;$('routeStartBtn').textContent=navigationActive?'Stop navigation':'Start navigation';$('demoLocationBtn').hidden=true;
   drawRoute(currentRoute.points,routeMode,fit); // after the panel text is final, so the fit uses its real height
- }catch(err){currentRoute=null;clearRoute();$('routeStartBtn').disabled=true;$('routeInfo').textContent=err.message;tabLabel('fastestTab','⚡','Fastest');tabLabel('quieterTab','◖','Quieter');$('demoLocationBtn').hidden=!demoAllowed()||locationType==='demo';}}
+ }catch(err){currentRoute=null;clearRoute();$('routeStartBtn').disabled=true;$('routeInfo').textContent=err.message;tabLabel('fastestTab','zap','Fastest');tabLabel('quieterTab','quiet','Quieter');$('demoLocationBtn').hidden=!demoAllowed()||locationType==='demo';}}
 function checkArrival(){if(!navigationActive||!destination||!location)return;if(meters(location,[Number(destination.latitude),Number(destination.longitude)])<=CONFIG.ARRIVAL_METERS){toast(`You have arrived at ${destination.name||'your destination'}`);setNavigation(false);updateRoute(false)}}
 let headingUp=true,simTimer=null,lastReroute=0;
 // Camera + panel update for the current position while navigating.

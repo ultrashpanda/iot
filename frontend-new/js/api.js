@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?v=5.4';
+import { CONFIG } from './config.js?v=5.6';
 // Simulated nodes, added on top of the real ones with the "Simulated nodes" button.
 // Positions are ESTIMATES of the Roskilde Festival layout on the OSM basemap
 // (inner site on Dyrskuepladsen in the north, Camping West/East/South around it).

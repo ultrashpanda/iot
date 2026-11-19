@@ -1,6 +1,6 @@
 // MapLibre map: vector basemap from the OSM extract, sound "blobs", labels, user position, route.
-import { CONFIG } from './config.js?v=5.4';
-const V='5.4';
+import { CONFIG } from './config.js?v=5.6';
+const V='5.6';
 const ll2=([lat,lon])=>[lon,lat];
 const MPP=78271.517*Math.cos(CONFIG.FESTIVAL_CENTER[0]*Math.PI/180); // metres per pixel at zoom 0
 // Circle radius given in metres (feature property or number), correct at every zoom level.
@@ -92,7 +92,7 @@ export function renderMarkers(devices,threshold,serverTime){
   const html=`<span class="lbl-db">${val}${fresh?'<small>dB</small>':''}${d.source==='simulated'?'<span class="lbl-sim">SIM</span>':''}</span><span class="lbl-name">${esc(d.name||id)}</span>`;
   let m=labels.get(id);
   if(!m){const el=document.createElement('button');el.type='button';el.className='node-label';el.setAttribute('aria-label',d.name||id);el.addEventListener('click',ev=>{ev.stopPropagation();onSelect(id)});
-   m=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([lon,lat]).addTo(map);labels.set(id,m)}
+   m=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([lon,lat]).addTo(map);el.setAttribute('aria-label',d.name||id);labels.set(id,m)}
   else m.setLngLat([lon,lat]);
   const el=m.getElement();if(el._html!==html){el.innerHTML=html;el._html=html}
   for(const c of ['low','near','high','unavailable'])el.classList.toggle(c,c===cat);el.classList.toggle('selected',selectedId===id);
