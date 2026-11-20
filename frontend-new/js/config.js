@@ -2,7 +2,7 @@
 // Simulated nodes can be added on top with the "Simulated nodes" button.
 export const CONFIG = {
   // Same origin as the page when the backend container serves the app (no CORS needed).
-  API_URL: 'http://172.20.10.2:8080/api/devices',
+  API_URL: '/api/devices',
   // Show the "Simulated nodes" button (set false to hide it, e.g. for the real festival).
   SIMULATED_BUTTON: true,
   // Simulated nodes switched on when the app opens (the user's last choice wins afterwards).
@@ -14,7 +14,9 @@ export const CONFIG = {
   // While this list is not empty the demo position (draggable blue dot) is available.
   // Leave it EMPTY for the real festival: TEST_POSITIONS: {}
   TEST_POSITIONS: {
-    // '1-soundscape-device': [55.6218, 12.0771],   // shown at Orange Stage
+   '1-soundscape-device': [55.6218, 12.0771],   // shown at Orange Stage
+   '2-soundscape-device': [55.6175, 12.0790],
+   '3-soundscape-device': [55.6178, 12.0920],
   },
   POLLING_INTERVAL: 5000,
   DEFAULT_NOISE_LIMIT: 75,
